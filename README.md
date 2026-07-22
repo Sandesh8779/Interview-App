@@ -47,3 +47,4 @@ Create an account from the sign-up page and choose the Admin module. After that,
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only on the backend. Never expose it in frontend code.
 - The frontend uses only `VITE_SUPABASE_ANON_KEY`.
 - The backend checks the logged-in user and role before each protected action.
+
