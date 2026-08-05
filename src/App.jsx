@@ -173,7 +173,20 @@ export default function App() {
   }
 
   if (loading) {
-    return <div className="boot">Loading InterviewFlow...</div>;
+    return (
+      <div className="boot">
+        <div className="loading-skeleton" style={{ width: 'min(820px, 100%)' }}>
+          <div className="skeleton-card" />
+          <div className="skeleton-line" style={{ width: '40%' }} />
+          <div className="skeleton-line" style={{ width: '70%' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+            <div className="skeleton-chip" />
+            <div className="skeleton-chip" />
+            <div className="skeleton-chip" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!session) {
@@ -1307,7 +1320,7 @@ function Metric({ icon: Icon, label, value, accent, trend }) {
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <Icon size={22} />
         {trend !== undefined && (
-          <span style={{fontSize:'0.78rem',fontWeight:700,display:'flex',alignItems:'center',gap:3,color: trend >= 0 ? '#38a169' : '#e53e3e'}}>
+          <span className="metric-trend" style={{ color: trend >= 0 ? '#38a169' : '#e53e3e' }}>
             <span style={{fontSize:'0.7rem'}}>{trend >= 0 ? '↑' : '↓'}</span>
             {Math.abs(trend)}%
           </span>
