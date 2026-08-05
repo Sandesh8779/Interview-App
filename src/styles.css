@@ -1156,10 +1156,32 @@ nav {
   opacity: 1;
 }
 
+.metric-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metric-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(31,143,131,0.14), rgba(99,102,241,0.12));
+}
+
 .metric svg {
   color: var(--teal-600);
   width: 22px;
   height: 22px;
+}
+
+.metric-body {
+  display: grid;
+  gap: 4px;
 }
 
 .metric span {
@@ -1175,6 +1197,12 @@ nav {
   color: var(--navy-900);
 }
 
+.metric small {
+  color: var(--slate-500);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
 .metric-trend {
   display: inline-flex;
   align-items: center;
@@ -1184,6 +1212,18 @@ nav {
   background: rgba(240, 250, 249, 0.95);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.metric-trend.up {
+  color: #2f855a;
+}
+
+.metric-trend.down {
+  color: #c53030;
+}
+
+.metric-trend-arrow {
+  font-size: 0.68rem;
 }
 
 /* Metric with accent colors */
@@ -1393,6 +1433,28 @@ textarea {
 
 .row div {
   min-width: 0;
+}
+
+.person-row {
+  grid-template-columns: 44px 1fr 160px;
+}
+
+.person-avatar-badge,
+.status-row-icon {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #1f8f83, #49b7a8);
+  color: #fff;
+  font-weight: 900;
+}
+
+.person-row-main {
+  display: grid;
+  gap: 2px;
 }
 
 .row span {
@@ -1634,6 +1696,20 @@ textarea {
 
 .status-row {
   grid-template-columns: 1fr auto;
+}
+
+.status-row-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-row-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(31,143,131,0.18), rgba(99,102,241,0.16));
+  color: #1f8f83;
 }
 
 @media (max-width: 900px) {
