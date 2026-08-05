@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import interviewsRouter from './routes/interviews.js';
 import profilesRouter from './routes/profiles.js';
+import requestsRouter from './routes/requests.js';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/profiles', profilesRouter);
 app.use('/api/interviews', interviewsRouter);
+app.use('/api/requests', requestsRouter);
 
 const clientDist = path.join(__dirname, '..', 'dist');
 app.use(express.static(clientDist));

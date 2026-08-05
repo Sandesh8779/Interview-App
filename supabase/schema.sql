@@ -44,6 +44,34 @@ create table public.submissions (
   submitted_at timestamptz not null default now()
 );
 
+create table public.requests (
+  id uuid primary key default uuid_generate_v4(),
+  candidate_id uuid not null references public.profiles(id) on delete cascade,
+  interviewer_id uuid references public.profiles(id) on delete set null,
+  job_title text not null,
+  message text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  created_at timestamptz not null default now()
+);
+
+-- MCQ and coding scores stored on the interview row
+alter table public.interviews
+  add column if not exists mcq_score integer,
+  add column if not exists mcq_total integer,
+  add column if not exists coding_submitted boolean default false,
+  add column if not exists mcq_submitted_at timestamptz,
+  add column if not exists coding_submitted_at timestamptz;
+
+create index requests_candidate_id_idx on public.requests(candidate_id);
+create index requests_status_idx on public.requests(status);
+
+create policy "Service role manages requests"
+  on public.requests for all
+  using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
+
+alter table public.requests enable row level security;
+
 create index interviews_candidate_id_idx on public.interviews(candidate_id);
 create index interviews_interviewer_id_idx on public.interviews(interviewer_id);
 create index questions_interview_id_idx on public.questions(interview_id);

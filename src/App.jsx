@@ -17,13 +17,15 @@ import {
   LogOut,
   Mail,
   MessageSquareText,
+  Mic,
   Plus,
   Settings,
   ShieldCheck,
   Star,
   Upload,
   UserCheck,
-  Users
+  Users,
+  Video
 } from 'lucide-react';
 import { supabase } from './lib/supabaseClient';
 import { api } from './lib/api';
@@ -466,6 +468,7 @@ function getMenu(role) {
   if (role === 'admin') {
     return [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'requests', label: 'Interviewer Requests', icon: Bell },
       { id: 'interviewers', label: 'Manage Interviewers', icon: UserCheck },
       { id: 'candidates', label: 'Manage Candidates', icon: Users },
       { id: 'jobs', label: 'Create Job Positions', icon: BriefcaseBusiness },
@@ -480,6 +483,7 @@ function getMenu(role) {
   if (role === 'interviewer') {
     return [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'requests', label: 'Candidate Requests', icon: Bell },
       { id: 'assigned', label: 'Assigned Interviews', icon: CalendarClock },
       { id: 'candidate', label: 'Candidate Details', icon: Users },
       { id: 'resume', label: 'Resume Viewer', icon: FileText },
@@ -496,10 +500,13 @@ function getMenu(role) {
     { id: 'profile', label: 'Profile', icon: Users },
     { id: 'resume', label: 'Upload Resume', icon: Upload },
     { id: 'jobs', label: 'Apply Job', icon: BriefcaseBusiness },
+    { id: 'request', label: 'Request Interviewer', icon: Bell },
     { id: 'schedule', label: 'Interview Schedule', icon: CalendarClock },
+    { id: 'practice', label: 'Video Practice', icon: Video },
+    { id: 'mock', label: 'Mock Interview', icon: Mic },
     { id: 'mcq', label: 'Take MCQ Test', icon: ClipboardCheck },
     { id: 'coding', label: 'Coding Test', icon: Code2 },
-    { id: 'hr-ai', label: 'HR AI Interview', icon: MessageSquareText },
+    { id: 'progress', label: 'My Progress', icon: BarChart3 },
     { id: 'result', label: 'Interview Result', icon: Star },
     { id: 'notifications', label: 'Notifications', icon: Bell }
   ];
@@ -664,51 +671,99 @@ function Chatbot({ offset = false }) {
 
 function AdminModule({ section, profiles, interviews, activeInterview, reload, setMessage }) {
   const [form, setForm] = useState(emptyInterview);
-  const candidates = profiles.filter((person) => person.role === 'candidate');
-  const interviewers = profiles.filter((person) => person.role === 'interviewer');
-  const todayCount = interviews.filter((item) => isToday(item.scheduled_at)).length;
-  const selected = interviews.filter((item) => item.status === 'reviewed' && Number(item.rating) >= 7).length;
-  const rejected = interviews.filter((item) => item.status === 'reviewed' && Number(item.rating) < 7).length;
+  const candidates = profiles.filter((p) => p.role === 'candidate');
+  const interviewers = profiles.filter((p) => p.role === 'interviewer');
+  const todayCount = interviews.filter((i) => isToday(i.scheduled_at)).length;
+  const selected = interviews.filter((i) => i.status === 'reviewed' && Number(i.rating) >= 7).length;
+  const rejected = interviews.filter((i) => i.status === 'reviewed' && Number(i.rating) < 7).length;
+  const passRate = (selected + rejected) > 0 ? Math.round(selected / (selected + rejected) * 100) : 0;
 
   async function createInterview(event) {
     event.preventDefault();
-    await api('/interviews', {
-      method: 'POST',
-      body: JSON.stringify({ ...form, scheduled_at: new Date(form.scheduled_at).toISOString() })
-    });
+    await api('/interviews', { method: 'POST', body: JSON.stringify({ ...form, scheduled_at: new Date(form.scheduled_at).toISOString() }) });
     setForm(emptyInterview);
-    setMessage('Interview scheduled and interviewer assigned.');
+    setMessage('Interview scheduled.');
     await reload();
   }
 
   async function changeRole(id, role) {
-    await api(`/profiles/${id}/role`, {
-      method: 'PATCH',
-      body: JSON.stringify({ role })
-    });
+    await api(`/profiles/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
     await reload();
   }
 
   if (section === 'dashboard') {
+    const recentIvs = interviews.slice(0, 5);
+    const statusCounts = { scheduled: 0, in_progress: 0, submitted: 0, reviewed: 0, cancelled: 0 };
+    interviews.forEach(i => { statusCounts[i.status] = (statusCounts[i.status] || 0) + 1; });
     return (
-      <div className="grid">
-        <div className="metric-grid">
-          <Metric icon={Users} label="Total Candidates" value={candidates.length} accent="green" trend={8} />
-          <Metric icon={UserCheck} label="Total Interviewers" value={interviewers.length} accent="blue" trend={12} />
-          <Metric icon={CalendarClock} label="Today's Interviews" value={todayCount} accent="amber" trend={-3} />
-          <Metric icon={CheckCircle2} label="Selected Candidates" value={selected} accent="purple" trend={15} />
-          <Metric icon={ClipboardCheck} label="Rejected Candidates" value={rejected} />
+      <div className="adm-dashboard">
+        {/* Hero strip */}
+        <div className="adm-hero">
+          <div className="adm-hero-left">
+            <div className="adm-hero-icon"><ShieldCheck size={28} /></div>
+            <div>
+              <h2>Admin Control Center</h2>
+              <p><strong>{interviews.length}</strong> total interviews &nbsp;·&nbsp; <strong>{todayCount}</strong> today &nbsp;·&nbsp; <strong>{passRate}%</strong> pass rate</p>
+            </div>
+          </div>
+          <div className="adm-hero-chips">
+            {[{l:'Candidates',v:candidates.length},{l:'Interviewers',v:interviewers.length},{l:'Selected',v:selected},{l:'Rejected',v:rejected}].map(c=>(
+              <div className="adm-chip" key={c.l}><span>{c.v}</span><label>{c.l}</label></div>
+            ))}
+          </div>
         </div>
-        <div className="grid two" style={{gridColumn:'1/-1'}}>
+
+        {/* KPI row */}
+        <div className="adm-kpi-row">
+          {[
+            {icon:Users,       label:'Candidates',   value:candidates.length,  cls:'adm-k-green'},
+            {icon:UserCheck,   label:'Interviewers', value:interviewers.length, cls:'adm-k-blue'},
+            {icon:CalendarClock,label:"Today's",     value:todayCount,          cls:'adm-k-amber'},
+            {icon:CheckCircle2,label:'Selected',     value:selected,            cls:'adm-k-teal'},
+            {icon:ClipboardCheck,label:'Rejected',   value:rejected,            cls:'adm-k-red'},
+          ].map(({icon:Icon,label,value,cls})=>(
+            <div className={`adm-kpi ${cls}`} key={label}>
+              <div className="adm-kpi-icon"><Icon size={20}/></div>
+              <div className="adm-kpi-body"><span>{label}</span><strong>{value}</strong></div>
+            </div>
+          ))}
+        </div>
+
+        <div className="adm-main-grid">
+          {/* Hiring trend chart */}
           <section className="panel">
-            <h2><BarChart3 size={20} /> Hiring Trend</h2>
-            <TrendChart values={[8, 12, 10, 18, 16, Math.max(interviews.length, 6)]} labels={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Now']} />
+            <div className="adm-panel-hd"><h2><BarChart3 size={18}/> Hiring Trend</h2><span className="adm-badge">6 months</span></div>
+            <TrendChart values={[8,12,10,18,16,Math.max(interviews.length,6)]} labels={['Jan','Feb','Mar','Apr','May','Now']} />
           </section>
-          <InterviewDetails interview={activeInterview} />
+
+          {/* Status breakdown */}
+          <section className="panel">
+            <div className="adm-panel-hd"><h2><BarChart3 size={18}/> Status Breakdown</h2></div>
+            <div className="adm-status-grid">
+              {Object.entries(statusCounts).map(([k,v])=>(
+                <div className={`adm-status-card adm-s-${k}`} key={k}>
+                  <strong>{v}</strong><span>{k.replace('_',' ')}</span>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-        <section className="panel wide">
-          <h2><CalendarClock size={20} /> Recent Interviews</h2>
-          <InterviewTable interviews={interviews.slice(0, 5)} />
+
+        {/* Recent interviews */}
+        <section className="panel">
+          <div className="adm-panel-hd"><h2><CalendarClock size={18}/> Recent Interviews</h2><span className="adm-badge">{interviews.length} total</span></div>
+          <div className="adm-iv-list">
+            {recentIvs.length === 0 ? <p className="muted">No interviews yet.</p> : recentIvs.map(iv=>(
+              <div className="adm-iv-row" key={iv.id}>
+                <div className="adm-iv-avatar">{(iv.candidate?.full_name||'C')[0].toUpperCase()}</div>
+                <div className="adm-iv-info">
+                  <strong>{iv.title}</strong>
+                  <span>{iv.candidate?.full_name||'Candidate'} · {iv.interviewer?.full_name||'Interviewer'} · {new Date(iv.scheduled_at).toLocaleDateString()}</span>
+                </div>
+                <span className={`pill ${iv.status}`}>{iv.status}</span>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     );
@@ -716,51 +771,79 @@ function AdminModule({ section, profiles, interviews, activeInterview, reload, s
 
   if (section === 'interviewers' || section === 'candidates') {
     const role = section === 'interviewers' ? 'interviewer' : 'candidate';
-    return <PeopleManager title={section === 'interviewers' ? 'Manage Interviewers' : 'Manage Candidates'} people={profiles.filter((person) => person.role === role)} allProfiles={profiles} changeRole={changeRole} />;
+    const people = profiles.filter((p) => p.role === role);
+    return (
+      <section className="panel">
+        <div className="adm-panel-hd" style={{marginBottom:18}}>
+          <h2><Users size={20}/> {section === 'interviewers' ? 'Manage Interviewers' : 'Manage Candidates'}</h2>
+          <span className="adm-badge">{people.length} {role}s</span>
+        </div>
+        <div className="adm-people-list">
+          {(people.length ? people : profiles).map((person)=>(
+            <div className="adm-person-row" key={person.id}>
+              <div className="adm-person-avatar">{(person.full_name||'U')[0].toUpperCase()}</div>
+              <div className="adm-person-info">
+                <strong>{person.full_name}</strong>
+                <span>{person.email}</span>
+              </div>
+              <select value={person.role} onChange={(e)=>changeRole(person.id,e.target.value)} className="adm-role-select">
+                <option value="admin">Admin</option>
+                <option value="interviewer">Interviewer</option>
+                <option value="candidate">Candidate</option>
+              </select>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
   }
 
-  if (section === 'jobs') {
-    return <JobsPanel />;
-  }
+  if (section === 'jobs') return <JobsPanel />;
 
   if (section === 'schedule') {
     return (
       <div className="grid two">
         <section className="panel">
-          <h2><Plus size={20} /> Schedule Interviews</h2>
+          <div className="adm-panel-hd" style={{marginBottom:18}}><h2><Plus size={20}/> Schedule Interview</h2></div>
           <form className="stack" onSubmit={createInterview}>
-            <input placeholder="Interview title" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required />
-            <textarea placeholder="Job, round, meeting link, or instructions" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
-            <select value={form.candidate_id} onChange={(event) => setForm({ ...form, candidate_id: event.target.value })} required>
+            <input placeholder="Interview title" value={form.title} onChange={(e)=>setForm({...form,title:e.target.value})} required />
+            <textarea placeholder="Job, round, meeting link, or instructions" value={form.description} onChange={(e)=>setForm({...form,description:e.target.value})} />
+            <select value={form.candidate_id} onChange={(e)=>setForm({...form,candidate_id:e.target.value})} required>
               <option value="">Select candidate</option>
-              {candidates.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}
+              {candidates.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}
             </select>
-            <select value={form.interviewer_id} onChange={(event) => setForm({ ...form, interviewer_id: event.target.value })} required>
+            <select value={form.interviewer_id} onChange={(e)=>setForm({...form,interviewer_id:e.target.value})} required>
               <option value="">Assign interviewer</option>
-              {interviewers.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}
+              {interviewers.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}
             </select>
-            <input type="datetime-local" value={form.scheduled_at} onChange={(event) => setForm({ ...form, scheduled_at: event.target.value })} required />
-            <input type="number" min="15" step="15" value={form.duration_minutes} onChange={(event) => setForm({ ...form, duration_minutes: Number(event.target.value) })} />
-            <button className="primary" type="submit"><Plus size={18} /> Create schedule</button>
+            <input type="datetime-local" value={form.scheduled_at} onChange={(e)=>setForm({...form,scheduled_at:e.target.value})} required />
+            <input type="number" min="15" step="15" value={form.duration_minutes} onChange={(e)=>setForm({...form,duration_minutes:Number(e.target.value)})} />
+            <button className="primary" type="submit"><Plus size={18}/> Create schedule</button>
           </form>
         </section>
-        <InterviewTable interviews={interviews} />
+        <section className="panel">
+          <div className="adm-panel-hd" style={{marginBottom:18}}><h2><CalendarClock size={18}/> All Interviews</h2><span className="adm-badge">{interviews.length}</span></div>
+          <div className="adm-iv-list">
+            {interviews.map(iv=>(
+              <div className="adm-iv-row" key={iv.id}>
+                <div className="adm-iv-avatar">{(iv.candidate?.full_name||'C')[0].toUpperCase()}</div>
+                <div className="adm-iv-info">
+                  <strong>{iv.title}</strong>
+                  <span>{iv.candidate?.full_name||'Candidate'} · {new Date(iv.scheduled_at).toLocaleString()}</span>
+                </div>
+                <span className={`pill ${iv.status}`}>{iv.status}</span>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     );
   }
 
-  if (section === 'questions') {
-    return <QuestionBank />;
-  }
-
-  if (section === 'reports') {
-    return <ReportsPanel interviews={interviews} candidates={candidates} interviewers={interviewers} />;
-  }
-
-  if (section === 'notifications') {
-    return <NotificationPanel />;
-  }
-
+  if (section === 'questions') return <QuestionBank />;
+  if (section === 'reports') return <ReportsPanel interviews={interviews} candidates={candidates} interviewers={interviewers} />;
+  if (section === 'notifications') return <NotificationPanel />;
+  if (section === 'requests') return <AdminRequestsPanel interviewers={interviewers} setMessage={setMessage} />;
   return <SettingsPanel />;
 }
 
@@ -946,6 +1029,7 @@ function InterviewerModule({ section, activeInterview, interviews, reload, setMe
 
   if (!activeInterview) return <EmptyState />;
 
+  if (section === 'requests') return <InterviewerRequestsPanel />;
   if (section === 'assigned') {
     return (
       <section className="panel">
@@ -975,28 +1059,7 @@ function InterviewerModule({ section, activeInterview, interviews, reload, setMe
   }
 
   if (section === 'candidate') {
-    const iv = activeInterview;
-    return (
-      <div className="grid two">
-        <section className="panel">
-          <div className="iv-candidate-hero">
-            <div className="iv-candidate-avatar">{(iv.candidate?.full_name || 'C')[0].toUpperCase()}</div>
-            <div>
-              <h3 style={{margin:'0 0 4px'}}>{iv.candidate?.full_name || 'Candidate'}</h3>
-              <p style={{margin:0,color:'#697386',fontSize:'0.9rem'}}>{iv.candidate?.email || 'No email'}</p>
-              <span className={`pill ${iv.status}`} style={{marginTop:8,display:'inline-flex'}}>{iv.status}</span>
-            </div>
-          </div>
-          <div className="iv-candidate-stats">
-            <div className="iv-cstat"><span>Position</span><strong>{iv.title}</strong></div>
-            <div className="iv-cstat"><span>Scheduled</span><strong>{new Date(iv.scheduled_at).toLocaleDateString()}</strong></div>
-            <div className="iv-cstat"><span>Duration</span><strong>{iv.duration_minutes} mins</strong></div>
-            <div className="iv-cstat"><span>Rating</span><strong>{iv.rating ? `${iv.rating}/10` : 'Pending'}</strong></div>
-          </div>
-        </section>
-        <InterviewDetails interview={iv} />
-      </div>
-    );
+    return <CandidateDetailView activeInterview={activeInterview} />;
   }
 
   if (section === 'resume') return <ResumeViewer />;
@@ -1095,10 +1158,16 @@ function CandidateModule({ section, profile, activeInterview, interviews, reload
   if (section === 'profile') return <ProfilePanel profile={profile} setMessage={setMessage} reload={reload} />;
   if (section === 'resume') return <UploadPanel profile={profile} setMessage={setMessage} />;
   if (section === 'jobs') return <ApplyJobsPanel setMessage={setMessage} />;
+  if (section === 'request') return <RequestInterviewerPanel profile={profile} setMessage={setMessage} />;
   if (section === 'schedule') return <CandidateSchedule interviews={interviews} />;
-  if (section === 'mcq') return <MCQTest setMessage={setMessage} />;
-  if (section === 'coding') return <CodingTest setMessage={setMessage} />;
-  if (section === 'hr-ai') return <HrAiPanel />;
+  if (section === 'mcq') return <MCQTest profile={profile} setMessage={setMessage} activeInterview={activeInterview} />;
+  if (section === 'coding') return <CodingTest profile={profile} setMessage={setMessage} activeInterview={activeInterview} />;
+
+  if (section === 'practice') return <VideoPracticePanel />;
+  if (section === 'mock') return <MockInterviewPanel profile={profile} setMessage={setMessage} />;
+
+
+  if (section === 'progress') return <ProgressTrackingPanel profile={profile} interviews={interviews} />;
   if (section === 'result') return <CandidateResult interview={activeInterview} />;
   if (section === 'notifications') return <NotificationList interviews={interviews} />;
   return <CandidateDashboard profile={profile} interviews={interviews} activeInterview={activeInterview} />;
@@ -1113,9 +1182,7 @@ function CandidateDashboard({ profile, interviews, activeInterview }) {
     function tick() {
       const diff = new Date(upcoming.scheduled_at) - new Date();
       if (diff <= 0) { setCountdown('Starting now!'); return; }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
+      const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
       setCountdown(`${h}h ${m}m ${s}s`);
     }
     tick();
@@ -1125,111 +1192,111 @@ function CandidateDashboard({ profile, interviews, activeInterview }) {
 
   const reviewed = interviews.filter(i => i.status === 'reviewed');
   const avgScore = reviewed.length ? Math.round(reviewed.reduce((s, i) => s + Number(i.rating || 0), 0) / reviewed.length * 10) / 10 : 0;
-
   const appSteps = [
-    { key: 'applied', label: 'Applied', done: true },
-    { key: 'screened', label: 'Screened', done: true },
-    { key: 'test', label: 'Test', done: interviews.some(i => i.status === 'submitted' || i.status === 'reviewed') },
+    { key: 'applied',   label: 'Applied',   done: true },
+    { key: 'screened',  label: 'Screened',  done: true },
+    { key: 'test',      label: 'Test',      done: interviews.some(i => i.status === 'submitted' || i.status === 'reviewed') },
     { key: 'interview', label: 'Interview', done: interviews.some(i => i.status === 'reviewed') },
-    { key: 'result', label: 'Result', done: reviewed.length > 0 },
+    { key: 'result',    label: 'Result',    done: reviewed.length > 0 },
   ];
   const progressDone = appSteps.filter(s => s.done).length;
-  const stepsCount = appSteps.length;
 
   const activities = [
     { icon: 'success', text: 'Profile created successfully', time: '2 weeks ago' },
-    { icon: 'info', text: 'Applied for Frontend Developer', time: '5 days ago' },
+    { icon: 'info',    text: 'Applied for Frontend Developer', time: '5 days ago' },
     { icon: 'success', text: 'Resume uploaded', time: '4 days ago' },
-    ...(interviews.some(i => i.status === 'scheduled')
-      ? [{ icon: 'warning', text: `Interview scheduled: ${upcoming?.title || 'Interview'}`, time: 'Today' }]
-      : []),
-    ...(reviewed.length > 0
-      ? [{ icon: 'success', text: `Interview completed - Score: ${avgScore}/10`, time: 'Recently' }]
-      : []),
+    ...(upcoming ? [{ icon: 'warning', text: `Interview scheduled: ${upcoming.title}`, time: 'Today' }] : []),
+    ...(reviewed.length > 0 ? [{ icon: 'success', text: `Interview completed — Score: ${avgScore}/10`, time: 'Recently' }] : []),
   ];
 
   return (
-    <div className="grid">
-      <div className="metric-grid three">
-        <Metric icon={BriefcaseBusiness} label="Applied Jobs" value={jobPositions.length} />
-        <Metric icon={CalendarClock} label="Interviews" value={interviews.length} />
-        <Metric icon={Star} label="Avg Score" value={avgScore ? `${avgScore}/10` : 'Awaiting'} />
+    <div className="cd-dash">
+      {/* Hero */}
+      <div className="cd-hero">
+        <div className="cd-hero-left">
+          <div className="cd-hero-avatar">{profile?.full_name?.[0]?.toUpperCase() || '?'}</div>
+          <div>
+            <h2>Welcome, {profile?.full_name?.split(' ')[0] || 'Candidate'} 👋</h2>
+            <p>{upcoming ? `Next interview: ${upcoming.title}` : 'No upcoming interviews scheduled.'}</p>
+          </div>
+        </div>
+        <div className="cd-hero-chips">
+          {[{l:'Applied',v:jobPositions.length},{l:'Interviews',v:interviews.length},{l:'Avg Score',v:avgScore?`${avgScore}/10`:'—'},{l:'Status',v:reviewed.length>0?'Reviewed':'Active'}].map(c=>(
+            <div className="cd-hero-chip" key={c.l}><span>{c.v}</span><label>{c.l}</label></div>
+          ))}
+        </div>
       </div>
 
-      {/* Application Progress Timeline */}
-      <section className="panel">
-        <h2><BarChart3 size={20} /> Application Progress</h2>
-        <div className="cd-timeline">
-          <div className="cd-timeline-line">
-            <div className="cd-timeline-line-fill" style={{width: `${(progressDone / (stepsCount - 1)) * 100}%`}} />
-          </div>
-          {appSteps.map((step, idx) => (
-            <div className="cd-timeline-step" key={step.key}>
-              <div className={`cd-timeline-dot ${step.done ? 'completed' : idx === progressDone ? 'active' : ''}`}>
-                {step.done ? '✓' : idx + 1}
-              </div>
-              <span className={`cd-timeline-label ${step.done ? 'completed' : idx === progressDone ? 'active' : ''}`}>
-                {step.label}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* KPI row */}
+      <div className="cd-kpi-row">
+        <div className="cd-kpi cd-kpi-teal"><div className="cd-kpi-icon"><BriefcaseBusiness size={20}/></div><div className="cd-kpi-body"><span>Applied Jobs</span><strong>{jobPositions.length}</strong></div></div>
+        <div className="cd-kpi cd-kpi-blue"><div className="cd-kpi-icon"><CalendarClock size={20}/></div><div className="cd-kpi-body"><span>Interviews</span><strong>{interviews.length}</strong></div></div>
+        <div className="cd-kpi cd-kpi-gold"><div className="cd-kpi-icon"><Star size={20}/></div><div className="cd-kpi-body"><span>Avg Score</span><strong>{avgScore ? `${avgScore}/10` : '—'}</strong></div></div>
+        <div className="cd-kpi cd-kpi-green"><div className="cd-kpi-icon"><CheckCircle2 size={20}/></div><div className="cd-kpi-body"><span>Completed</span><strong>{reviewed.length}</strong></div></div>
+      </div>
 
-      {upcoming && (
-        <section className="panel cd-countdown-panel">
-          <div className="cd-countdown-left">
-            <span className="cd-countdown-label">⏰ Next Interview Countdown</span>
-            <div className="cd-countdown-timer" style={{fontSize:'2.4rem',fontWeight:900,color:'#1f8f83'}}>{countdown}</div>
-            <p className="muted">{upcoming.title} — {new Date(upcoming.scheduled_at).toLocaleString()}</p>
-          </div>
-          <div className="cd-countdown-right">
-            <span className={`pill ${upcoming.status}`}>{upcoming.status}</span>
-            <span className="muted">with {upcoming.interviewer?.full_name || 'Interviewer'}</span>
-          </div>
-        </section>
-      )}
-
-      <section className="panel">
-        <h2><BarChart3 size={20} /> Performance Overview</h2>
-        <TrendChart
-          values={[72, 81, activeInterview?.rating ? activeInterview.rating * 10 : 0]}
-          labels={['MCQ', 'Coding', 'Interview']}
-        />
-      </section>
-
-      {/* Recent Activity Feed */}
-      <section className="panel">
-        <h2><Bell size={20} /> Recent Activity</h2>
-        <div className="cd-activity-feed">
-          {activities.map((act, i) => (
-            <div className="cd-activity-item" key={i}>
-              <div className={`cd-activity-icon ${act.icon}`}>✓</div>
-              <div className="cd-activity-content">
-                <p>{act.text}</p>
-                <span className="cd-activity-time">{act.time}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2><CalendarClock size={20} /> Recent Interviews</h2>
-        {interviews.length === 0 ? <p className="muted">No interviews scheduled yet.</p> : (
-          <div className="table-list">
-            {interviews.slice(0, 5).map(iv => (
-              <div className="row status-row" key={iv.id}>
-                <div>
-                  <strong>{iv.title}</strong>
-                  <span>{new Date(iv.scheduled_at).toLocaleString()} · {iv.interviewer?.full_name || 'Interviewer'}</span>
-                </div>
-                <span className={`pill ${iv.status}`}>{iv.status}</span>
+      {/* Progress + countdown */}
+      <div className="cd-mid-grid">
+        <section className="panel">
+          <div className="cd-panel-hd"><h2><BarChart3 size={18}/> Application Progress</h2></div>
+          <div className="cd-timeline">
+            <div className="cd-timeline-line"><div className="cd-timeline-line-fill" style={{width:`${(progressDone/(appSteps.length-1))*100}%`}}/></div>
+            {appSteps.map((step,idx)=>(
+              <div className="cd-timeline-step" key={step.key}>
+                <div className={`cd-timeline-dot ${step.done?'completed':idx===progressDone?'active':''}`}>{step.done?'✓':idx+1}</div>
+                <span className={`cd-timeline-label ${step.done?'completed':idx===progressDone?'active':''}`}>{step.label}</span>
               </div>
             ))}
           </div>
+        </section>
+
+        {upcoming ? (
+          <section className="panel cd-countdown-card">
+            <div className="cd-panel-hd"><h2>⏰ Next Interview</h2><span className={`pill ${upcoming.status}`}>{upcoming.status}</span></div>
+            <div className="cd-countdown-timer">{countdown}</div>
+            <p className="muted" style={{margin:'6px 0 0'}}>{upcoming.title} · {new Date(upcoming.scheduled_at).toLocaleString()}</p>
+            <p className="muted" style={{margin:'4px 0 0',fontSize:'0.85rem'}}>with {upcoming.interviewer?.full_name || 'Interviewer'}</p>
+          </section>
+        ) : (
+          <section className="panel">
+            <div className="cd-panel-hd"><h2><BarChart3 size={18}/> Performance</h2></div>
+            <TrendChart values={[72,81,activeInterview?.rating?activeInterview.rating*10:0]} labels={['MCQ','Coding','Interview']} />
+          </section>
         )}
-      </section>
+      </div>
+
+      {/* Activity + recent interviews */}
+      <div className="cd-mid-grid">
+        <section className="panel">
+          <div className="cd-panel-hd"><h2><Bell size={18}/> Recent Activity</h2></div>
+          <div className="cd-act-list">
+            {activities.map((a,i)=>(
+              <div className="cd-act-item" key={i}>
+                <div className={`cd-act-dot ${a.icon}`}/>
+                <div><strong>{a.text}</strong><span>{a.time}</span></div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="cd-panel-hd"><h2><CalendarClock size={18}/> My Interviews</h2><span className="cd-badge">{interviews.length}</span></div>
+          {interviews.length === 0 ? <p className="muted">No interviews yet.</p> : (
+            <div className="adm-iv-list">
+              {interviews.slice(0,5).map(iv=>(
+                <div className="adm-iv-row" key={iv.id}>
+                  <div className="adm-iv-avatar" style={{background:'linear-gradient(135deg,#6366f1,#818cf8)'}}>{(iv.title||'I')[0].toUpperCase()}</div>
+                  <div className="adm-iv-info">
+                    <strong>{iv.title}</strong>
+                    <span>{new Date(iv.scheduled_at).toLocaleString()} · {iv.interviewer?.full_name||'Interviewer'}</span>
+                  </div>
+                  <span className={`pill ${iv.status}`}>{iv.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -1882,8 +1949,17 @@ function CandidateSchedule({ interviews }) {
   );
 }
 
-function MCQTest({ setMessage }) {
-  const MCQ = [
+// Fisher-Yates shuffle
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const ALL_MCQ = [
     { q: 'Which hook is used for side effects in React?', opts: ['useState', 'useEffect', 'useRef', 'useMemo'], ans: 1 },
     { q: 'What does HTTP 401 mean?', opts: ['Not Found', 'Forbidden', 'Unauthorized', 'Server Error'], ans: 2 },
     { q: 'What is the purpose of database indexing?', opts: ['Backup data', 'Speed up queries', 'Encrypt data', 'Normalize tables'], ans: 1 },
@@ -1914,130 +1990,172 @@ function MCQTest({ setMessage }) {
     { q: 'What does the "map()" method return in JavaScript?', opts: ['A boolean', 'A new array', 'The original array mutated', 'An object'], ans: 1 },
     { q: 'Which CSS unit is relative to the parent font-size?', opts: ['px', 'rem', 'em', 'vw'], ans: 2 },
     { q: 'What is hoisting in JavaScript?', opts: ['Moving CSS up', 'Variable/function declarations moved to top', 'Lifting DOM elements', 'A type of loop'], ans: 1 },
+    { q: 'What does the spread operator (...) do?', opts: ['Deletes array items', 'Copies/expands iterables', 'Creates a loop', 'Declares a variable'], ans: 1 },
+    { q: 'Which method removes the last element of an array?', opts: ['shift()', 'pop()', 'splice()', 'slice()'], ans: 1 },
+    { q: 'What is the default display value of a <div>?', opts: ['inline', 'block', 'flex', 'grid'], ans: 1 },
+    { q: 'Which event fires when a page finishes loading?', opts: ['onload', 'onready', 'onstart', 'onrender'], ans: 0 },
+    { q: 'What does async/await do in JavaScript?', opts: ['Runs code in parallel threads', 'Handles promises with cleaner syntax', 'Blocks the main thread', 'Creates a new scope'], ans: 1 },
   ];
-  const TIME = 1800;
+
+function MCQTest({ profile, setMessage, activeInterview }) {
+  const storageKey = `if_mcq_result_${profile?.id}`;
+  const stored = (() => { try { return JSON.parse(localStorage.getItem(storageKey)); } catch { return null; } })();
+
+  // Shuffle 15 questions once per session (stable via useMemo)
+  const MCQ = useMemo(() => shuffle(ALL_MCQ).slice(0, 15), []);
+
+  const TIME = 900; // 15 mins for 15 questions
   const [sel, setSel] = useState({});
-  const [submitted, setSubmitted] = useState(false);
-  const [score, setScore] = useState(0);
+  const [submitted, setSubmitted] = useState(!!stored);
+  const [score, setScore] = useState(stored?.score ?? 0);
   const [timeLeft, setTimeLeft] = useState(TIME);
   const [currentQ, setCurrentQ] = useState(0);
   const [flagged, setFlagged] = useState({});
 
   useEffect(() => {
     if (submitted) return;
-    if (timeLeft <= 0) { submit(); return; }
+    if (timeLeft <= 0) { doSubmit(); return; }
     const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
     return () => clearTimeout(t);
   }, [timeLeft, submitted]);
 
-  function submit() {
+  async function doSubmit() {
     const s = MCQ.reduce((acc, q, i) => acc + (sel[i] === q.ans ? 1 : 0), 0);
     setScore(s);
     setSubmitted(true);
+    localStorage.setItem(storageKey, JSON.stringify({ score: s, total: MCQ.length, date: new Date().toISOString() }));
     setMessage(`MCQ submitted! Score: ${s}/${MCQ.length}`);
+    // Persist to DB if interview exists
+    if (activeInterview?.id) {
+      try {
+        await api(`/interviews/${activeInterview.id}/mcq-score`, {
+          method: 'PATCH',
+          body: JSON.stringify({ mcq_score: s, mcq_total: MCQ.length })
+        });
+      } catch {}
+    }
   }
 
   const mins = String(Math.floor(timeLeft / 60)).padStart(2, '0');
   const secs = String(timeLeft % 60).padStart(2, '0');
   const answeredCount = Object.keys(sel).length;
 
-  function toggleFlag(i) {
-    setFlagged(prev => ({ ...prev, [i]: !prev[i] }));
+  // Already submitted — show locked result
+  if (submitted) {
+    return (
+      <section className="panel">
+        <h2><ClipboardCheck size={20} /> MCQ Test — Submitted</h2>
+        <div className="test-locked-banner">
+          <CheckCircle2 size={28} color="#1f8f83" />
+          <div>
+            <strong>Test already submitted</strong>
+            <p>You scored <strong>{score}/{stored?.total ?? MCQ.length}</strong>. You cannot retake the test until the interviewer resets it after the result.</p>
+          </div>
+        </div>
+        {stored?.date && <p className="muted" style={{fontSize:'0.82rem',marginTop:8}}>Submitted on {new Date(stored.date).toLocaleString()}</p>}
+      </section>
+    );
   }
 
   return (
     <section className="panel">
       <h2 style={{justifyContent:'space-between'}}>
         <span><ClipboardCheck size={20} /> MCQ Test</span>
-        {!submitted && <span className={`cd-timer${timeLeft < 60 ? ' danger' : ''}`} style={{fontSize:'0.95rem',fontWeight:700}}>⏱ {mins}:{secs}</span>}
+        <span className={`cd-timer${timeLeft < 60 ? ' danger' : ''}`} style={{fontSize:'0.95rem',fontWeight:700}}>⏱ {mins}:{secs}</span>
       </h2>
 
-      {!submitted && (
-        <>
-          <div className="cd-mcq-progress">
-            <div className="cd-mcq-progress-bar">
-              <div className="cd-mcq-progress-fill" style={{width:`${(answeredCount / MCQ.length) * 100}%`}} />
-            </div>
-            <span className="cd-mcq-progress-text">{answeredCount}/{MCQ.length} answered</span>
-          </div>
+      <div className="cd-mcq-progress">
+        <div className="cd-mcq-progress-bar">
+          <div className="cd-mcq-progress-fill" style={{width:`${(answeredCount / MCQ.length) * 100}%`}} />
+        </div>
+        <span className="cd-mcq-progress-text">{answeredCount}/{MCQ.length} answered</span>
+      </div>
 
-          <div className="cd-mcq-nav">
-            {MCQ.map((_, i) => (
-              <button
-                key={i}
-                className={`cd-mcq-nav-btn${currentQ === i ? ' active' : ''}${sel[i] !== undefined ? ' answered' : ''}${flagged[i] ? ' flagged' : ''}`}
-                onClick={() => setCurrentQ(i)}
-                type="button"
-                title={flagged[i] ? 'Flagged' : ''}
-              >
-                {i + 1}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      <div className="cd-mcq-nav">
+        {MCQ.map((_, i) => (
+          <button key={i}
+            className={`cd-mcq-nav-btn${currentQ===i?' active':''}${sel[i]!==undefined?' answered':''}${flagged[i]?' flagged':''}`}
+            onClick={() => setCurrentQ(i)} type="button">{i + 1}
+          </button>
+        ))}
+      </div>
 
-      {submitted ? (
-        <div className="cd-result-box">
-          <div className="cd-result-score">{score}/{MCQ.length}</div>
-          <p>You answered {score} out of {MCQ.length} correctly.</p>
-          <div className="items" style={{marginTop:16}}>
-            {MCQ.map((q, i) => (
-              <div className="item" key={i} style={{gridTemplateColumns:'34px 1fr'}}>
-                <span style={{background: sel[i]===q.ans?'#dff3ef':'#fde7e7', color: sel[i]===q.ans?'#12665d':'#9f1f1f'}}>{sel[i]===q.ans?'✓':'✗'}</span>
-                <div><strong>{q.q}</strong><p style={{color:'#1f8f83',marginTop:4}}>Correct: {q.opts[q.ans]}</p></div>
-              </div>
+      <form className="stack" onSubmit={e => { e.preventDefault(); doSubmit(); }}>
+        <div className="cd-mcq-q" key={currentQ}>
+          <p style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <strong>Question {currentQ + 1} of {MCQ.length}</strong>
+            <span onClick={() => setFlagged(p=>({...p,[currentQ]:!p[currentQ]}))} style={{cursor:'pointer',fontSize:'1.2rem',opacity:flagged[currentQ]?1:0.4}} title="Flag">🚩</span>
+          </p>
+          <p style={{fontSize:'1.05rem',margin:'8px 0 16px'}}><strong>{MCQ[currentQ].q}</strong></p>
+          <div style={{display:'grid',gap:10}}>
+            {MCQ[currentQ].opts.map((opt, j) => (
+              <label key={j} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderRadius:8,border:'1.5px solid',borderColor:sel[currentQ]===j?'#1f8f83':'#dde2ea',background:sel[currentQ]===j?'#f0faf9':'#fff',cursor:'pointer',transition:'all 0.15s'}}>
+                <input type="radio" name={`q${currentQ}`} checked={sel[currentQ]===j} onChange={() => setSel(p=>({...p,[currentQ]:j}))} style={{width:18,height:18,accentColor:'#1f8f83'}} />
+                {opt}
+              </label>
             ))}
           </div>
         </div>
-      ) : (
-        <form className="stack" onSubmit={e => { e.preventDefault(); submit(); }}>
-          <div className="cd-mcq-q" key={currentQ}>
-            <p style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <strong>Question {currentQ + 1} of {MCQ.length}</strong>
-              <span
-                onClick={() => toggleFlag(currentQ)}
-                style={{cursor:'pointer',fontSize:'1.2rem',opacity:flagged[currentQ]?1:0.4}}
-                title={flagged[currentQ] ? 'Unflag' : 'Flag for review'}
-              >
-                🚩
-              </span>
-            </p>
-            <p style={{fontSize:'1.1rem',margin:'8px 0 16px'}}><strong>{MCQ[currentQ].q}</strong></p>
-            <div className="cd-mcq-opts" style={{display:'grid',gap:10}}>
-              {MCQ[currentQ].opts.map((opt, j) => (
-                <label key={j} className={`cd-mcq-opt${sel[currentQ]===j?' selected':''}`} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderRadius:8,border:'1.5px solid',borderColor:sel[currentQ]===j?'#1f8f83':'#dde2ea',background:sel[currentQ]===j?'#f0faf9':'#fff',cursor:'pointer',transition:'all 0.15s'}}>
-                  <input type="radio" name={`q${currentQ}`} checked={sel[currentQ]===j} onChange={() => setSel(p => ({...p,[currentQ]:j}))} style={{width:18,height:18,accentColor:'#1f8f83'}} />
-                  {opt}
-                </label>
-              ))}
-            </div>
-          </div>
-          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-            {currentQ > 0 && <button className="secondary" type="button" onClick={() => setCurrentQ(p => p - 1)}>← Previous</button>}
-            {currentQ < MCQ.length - 1 && <button className="secondary" type="button" onClick={() => setCurrentQ(p => p + 1)}>Next →</button>}
-            <button className="primary" type="submit" style={{marginLeft:'auto'}}><CheckCircle2 size={18} /> Submit MCQ Test</button>
-          </div>
-        </form>
-      )}
+        <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+          {currentQ > 0 && <button className="secondary" type="button" onClick={() => setCurrentQ(p=>p-1)}>← Previous</button>}
+          {currentQ < MCQ.length - 1 && <button className="secondary" type="button" onClick={() => setCurrentQ(p=>p+1)}>Next →</button>}
+          <button className="primary" type="submit" style={{marginLeft:'auto'}}><CheckCircle2 size={18}/> Submit MCQ Test</button>
+        </div>
+      </form>
     </section>
   );
 }
 
-function CodingTest({ setMessage }) {
-  const TASKS = [
-    { title: 'Palindrome Check', desc: 'Write a function that checks if a given string is a palindrome. Ignore case, spaces, and non-alphanumeric characters.', starter: 'function isPalindrome(str) {\n  // your code here\n}' },
-    { title: 'Rotate Array', desc: 'Rotate an array to the right by k steps in-place without using extra space for another array.', starter: 'function rotateArray(nums, k) {\n  // your code here\n}' },
-    { title: 'Find Missing Number', desc: 'Given an array containing n distinct numbers taken from 0, 1, 2, ..., n, find the one that is missing from the array.', starter: 'function findMissingNumber(nums) {\n  // your code here\n}' },
-  ];
+const ALL_CODING_TASKS = [
+  { title: 'Palindrome Check', desc: 'Check if a string is a palindrome (ignore case and non-alphanumeric).', starter: 'function isPalindrome(str) {\n  // your code here\n}' },
+  { title: 'Rotate Array', desc: 'Rotate an array to the right by k steps in-place.', starter: 'function rotateArray(nums, k) {\n  // your code here\n}' },
+  { title: 'Find Missing Number', desc: 'Find the missing number in an array of 0 to n.', starter: 'function findMissingNumber(nums) {\n  // your code here\n}' },
+  { title: 'Reverse a String', desc: 'Reverse a string without using the built-in reverse method.', starter: 'function reverseString(str) {\n  // your code here\n}' },
+  { title: 'FizzBuzz', desc: 'Print numbers 1-n. Multiples of 3 print Fizz, 5 print Buzz, both print FizzBuzz.', starter: 'function fizzBuzz(n) {\n  // your code here\n}' },
+  { title: 'Count Vowels', desc: 'Count the number of vowels in a given string.', starter: 'function countVowels(str) {\n  // your code here\n}' },
+  { title: 'Two Sum', desc: 'Return indices of two numbers that add up to the target.', starter: 'function twoSum(nums, target) {\n  // your code here\n}' },
+  { title: 'Flatten Array', desc: 'Flatten a nested array to a single level.', starter: 'function flattenArray(arr) {\n  // your code here\n}' },
+  { title: 'Remove Duplicates', desc: 'Remove duplicate values from an array.', starter: 'function removeDuplicates(arr) {\n  // your code here\n}' },
+  { title: 'Fibonacci', desc: 'Return the nth Fibonacci number.', starter: 'function fibonacci(n) {\n  // your code here\n}' },
+];
+
+function CodingTest({ profile, setMessage, activeInterview }) {
+  const storageKey = `if_coding_result_${profile?.id}`;
+  const stored = (() => { try { return JSON.parse(localStorage.getItem(storageKey)); } catch { return null; } })();
+
+  // Pick 3 random tasks per session
+  const TASKS = useMemo(() => shuffle(ALL_CODING_TASKS).slice(0, 3), []);
+
   const [active, setActive] = useState(0);
   const [codes, setCodes] = useState(TASKS.map(t => t.starter));
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(!!stored);
 
-  function submit(e) {
+  async function doSubmit(e) {
     e.preventDefault();
     setSubmitted(true);
+    localStorage.setItem(storageKey, JSON.stringify({ date: new Date().toISOString() }));
     setMessage('Coding test submitted for review!');
+    if (activeInterview?.id) {
+      try {
+        await api(`/interviews/${activeInterview.id}/coding-submit`, { method: 'PATCH', body: JSON.stringify({}) });
+      } catch {}
+    }
+  }
+
+  if (submitted) {
+    return (
+      <section className="panel">
+        <h2><Code2 size={20} /> Coding Test — Submitted</h2>
+        <div className="test-locked-banner">
+          <CheckCircle2 size={28} color="#1f8f83" />
+          <div>
+            <strong>Test already submitted</strong>
+            <p>Your coding solutions have been sent for review. You cannot resubmit until the interviewer resets it after the result.</p>
+          </div>
+        </div>
+        {stored?.date && <p className="muted" style={{fontSize:'0.82rem',marginTop:8}}>Submitted on {new Date(stored.date).toLocaleString()}</p>}
+      </section>
+    );
   }
 
   return (
@@ -2045,29 +2163,22 @@ function CodingTest({ setMessage }) {
       <h2><Code2 size={20} /> Coding Test</h2>
       <div className="cd-coding-tabs">
         {TASKS.map((t, i) => (
-          <button key={i} className={active===i?'cd-tab active':'cd-tab'} onClick={() => setActive(i)} type="button">Task {i+1}</button>
+          <button key={i} className={active===i?'cd-tab active':'cd-tab'} onClick={() => setActive(i)} type="button">Task {i+1}: {t.title}</button>
         ))}
       </div>
-      {submitted ? (
-        <div className="cd-result-box">
-          <CheckCircle2 size={40} color="#1f8f83" />
-          <p>All coding tasks submitted successfully. Your interviewer will review them.</p>
+      <form className="stack" onSubmit={doSubmit}>
+        <div className="cd-coding-task">
+          <strong>{TASKS[active].title}</strong>
+          <p className="muted">{TASKS[active].desc}</p>
         </div>
-      ) : (
-        <form className="stack" onSubmit={submit}>
-          <div className="cd-coding-task">
-            <strong>{TASKS[active].title}</strong>
-            <p className="muted">{TASKS[active].desc}</p>
-          </div>
-          <textarea
-            className="cd-code-editor"
-            value={codes[active]}
-            onChange={e => setCodes(prev => prev.map((c, i) => i===active ? e.target.value : c))}
-            spellCheck={false}
-          />
-          <button className="primary" type="submit"><CheckCircle2 size={18} /> Submit All Tasks</button>
-        </form>
-      )}
+        <textarea
+          className="cd-code-editor"
+          value={codes[active]}
+          onChange={e => setCodes(prev => prev.map((c, i) => i===active ? e.target.value : c))}
+          spellCheck={false}
+        />
+        <button className="primary" type="submit"><CheckCircle2 size={18}/> Submit All Tasks</button>
+      </form>
     </section>
   );
 }
@@ -2149,6 +2260,291 @@ function AnswerList({ submissions = [], questions = [] }) {
   );
 }
 
+// ── Admin: view & action all candidate requests ──────────────────────────────
+function AdminRequestsPanel({ interviewers, setMessage }) {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [assignMap, setAssignMap] = useState({});
+
+  async function load() {
+    setLoading(true);
+    try { setRequests(await api('/requests')); } catch (e) { setMessage(e.message); }
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function action(id, status) {
+    try {
+      await api(`/requests/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, interviewer_id: assignMap[id] || undefined })
+      });
+      setMessage(`Request ${status}.`);
+      load();
+    } catch (e) { setMessage(e.message); }
+  }
+
+  const pending  = requests.filter(r => r.status === 'pending');
+  const resolved = requests.filter(r => r.status !== 'pending');
+
+  return (
+    <div className="grid" style={{gap:20}}>
+      <section className="panel">
+        <div className="adm-panel-hd" style={{marginBottom:18}}>
+          <h2><Bell size={20}/> Interviewer Requests</h2>
+          <span className="adm-badge">{pending.length} pending</span>
+        </div>
+        {loading ? <p className="muted">Loading…</p> : pending.length === 0 ? (
+          <div className="req-empty"><CheckCircle2 size={32} color="#49b7a8"/><p>No pending requests.</p></div>
+        ) : (
+          <div className="req-list">
+            {pending.map(r => (
+              <div className="req-card" key={r.id}>
+                <div className="req-card-top">
+                  <div className="req-avatar">{(r.candidate?.full_name||'C')[0].toUpperCase()}</div>
+                  <div className="req-info">
+                    <strong>{r.candidate?.full_name || 'Candidate'}</strong>
+                    <span>{r.candidate?.email}</span>
+                    <span className="req-job">{r.job_title}</span>
+                  </div>
+                  <span className="req-pill pending">Pending</span>
+                </div>
+                {r.message && <p className="req-msg">"{r.message}"</p>}
+                <div className="req-actions">
+                  <select
+                    value={assignMap[r.id] || ''}
+                    onChange={e => setAssignMap(p => ({...p,[r.id]:e.target.value}))}
+                    className="adm-role-select"
+                  >
+                    <option value="">Assign interviewer (optional)</option>
+                    {interviewers.map(iv => <option key={iv.id} value={iv.id}>{iv.full_name}</option>)}
+                  </select>
+                  <button className="primary" style={{minHeight:36,padding:'0 16px'}} onClick={() => action(r.id,'approved')}>
+                    <CheckCircle2 size={15}/> Approve
+                  </button>
+                  <button className="req-reject-btn" onClick={() => action(r.id,'rejected')}>Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {resolved.length > 0 && (
+        <section className="panel">
+          <div className="adm-panel-hd" style={{marginBottom:18}}>
+            <h2><ClipboardCheck size={18}/> Resolved Requests</h2>
+            <span className="adm-badge">{resolved.length}</span>
+          </div>
+          <div className="req-list">
+            {resolved.map(r => (
+              <div className="req-card resolved" key={r.id}>
+                <div className="req-card-top">
+                  <div className="req-avatar">{(r.candidate?.full_name||'C')[0].toUpperCase()}</div>
+                  <div className="req-info">
+                    <strong>{r.candidate?.full_name}</strong>
+                    <span>{r.job_title}</span>
+                    {r.interviewer && <span>Assigned: {r.interviewer.full_name}</span>}
+                  </div>
+                  <span className={`req-pill ${r.status}`}>{r.status}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ── Candidate: submit a request for interviewer assignment ────────────────────
+function RequestInterviewerPanel({ profile, setMessage }) {
+  const [form, setForm] = useState({ job_title: '', message: '' });
+  const [myRequests, setMyRequests] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function load() {
+    try { setMyRequests(await api('/requests/mine')); } catch {}
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function submit(e) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api('/requests', { method: 'POST', body: JSON.stringify(form) });
+      setMessage('Request sent to admin!');
+      setForm({ job_title: '', message: '' });
+      load();
+    } catch (err) { setMessage(err.message); }
+    setSubmitting(false);
+  }
+
+  return (
+    <div className="grid two">
+      <section className="panel">
+        <div className="cd-panel-hd" style={{marginBottom:18}}>
+          <h2><Bell size={20}/> Request Interviewer Assignment</h2>
+        </div>
+        <div className="req-info-box">
+          <ShieldCheck size={20} color="#6366f1"/>
+          <p>Submit a request to the admin to get an interviewer assigned for your interview. The admin will review and approve it.</p>
+        </div>
+        <form className="stack" onSubmit={submit} style={{marginTop:16}}>
+          <label>
+            Job Position
+            <input placeholder="e.g. Frontend Developer" value={form.job_title} onChange={e => setForm({...form,job_title:e.target.value})} required />
+          </label>
+          <label>
+            Message to Admin (optional)
+            <textarea placeholder="Any specific requirements or notes..." value={form.message} onChange={e => setForm({...form,message:e.target.value})} style={{minHeight:90}} />
+          </label>
+          <button className="primary" type="submit" disabled={submitting}>
+            <Bell size={16}/> {submitting ? 'Sending…' : 'Send Request'}
+          </button>
+        </form>
+      </section>
+
+      <section className="panel">
+        <div className="cd-panel-hd" style={{marginBottom:18}}>
+          <h2><ClipboardList size={18}/> My Requests</h2>
+          <span className="cd-badge">{myRequests.length}</span>
+        </div>
+        {myRequests.length === 0 ? (
+          <div className="req-empty"><Bell size={28} color="#9aa2b2"/><p>No requests submitted yet.</p></div>
+        ) : (
+          <div className="req-list">
+            {myRequests.map(r => (
+              <div className="req-card" key={r.id}>
+                <div className="req-card-top">
+                  <div className="req-avatar" style={{background:'linear-gradient(135deg,#6366f1,#818cf8)'}}>
+                    {r.job_title[0].toUpperCase()}
+                  </div>
+                  <div className="req-info">
+                    <strong>{r.job_title}</strong>
+                    <span>{new Date(r.created_at).toLocaleDateString()}</span>
+                    {r.interviewer && <span>Interviewer: {r.interviewer.full_name}</span>}
+                  </div>
+                  <span className={`req-pill ${r.status}`}>{r.status}</span>
+                </div>
+                {r.message && <p className="req-msg">"{r.message}"</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// ── Interviewer: see approved requests assigned to them ───────────────────────
+function InterviewerRequestsPanel() {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api('/requests/assigned')
+      .then(setRequests)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <section className="panel">
+      <div className="iv-panel-header" style={{marginBottom:18}}>
+        <h2><Bell size={20}/> Candidate Requests Assigned to You</h2>
+        <span className="iv-panel-badge">{requests.length} approved</span>
+      </div>
+      {loading ? <p className="muted">Loading…</p> : requests.length === 0 ? (
+        <div className="req-empty"><CheckCircle2 size={32} color="#49b7a8"/><p>No requests assigned to you yet.</p></div>
+      ) : (
+        <div className="req-list">
+          {requests.map(r => (
+            <div className="req-card" key={r.id}>
+              <div className="req-card-top">
+                <div className="req-avatar">{(r.candidate?.full_name||'C')[0].toUpperCase()}</div>
+                <div className="req-info">
+                  <strong>{r.candidate?.full_name}</strong>
+                  <span>{r.candidate?.email}</span>
+                  <span className="req-job">{r.job_title}</span>
+                </div>
+                <span className="req-pill approved">Approved</span>
+              </div>
+              {r.message && <p className="req-msg">"{r.message}"</p>}
+              <p style={{margin:'8px 0 0',fontSize:'0.8rem',color:'#9aa2b2'}}>Requested {new Date(r.created_at).toLocaleDateString()}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Interviewer: fetch and display full candidate profile + test scores
+function CandidateDetailView({ activeInterview }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!activeInterview?.candidate?.id) { setLoading(false); return; }
+    api(`/requests/candidate/${activeInterview.candidate.id}`)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [activeInterview?.candidate?.id]);
+
+  const iv = activeInterview;
+  // Merge DB scores into the active interview display
+  const dbIv = data?.interviews?.find(i => i.id === iv?.id) || {};
+  const mcqScore = dbIv.mcq_score ?? iv?.mcq_score;
+  const mcqTotal = dbIv.mcq_total ?? iv?.mcq_total;
+  const codingDone = dbIv.coding_submitted ?? iv?.coding_submitted;
+
+  if (loading) return <section className="panel"><p className="muted">Loading candidate data…</p></section>;
+
+  return (
+    <div className="grid two">
+      <section className="panel">
+        <div className="iv-candidate-hero">
+          <div className="iv-candidate-avatar">{(iv?.candidate?.full_name || 'C')[0].toUpperCase()}</div>
+          <div>
+            <h3 style={{margin:'0 0 4px'}}>{iv?.candidate?.full_name || 'Candidate'}</h3>
+            <p style={{margin:0,color:'#697386',fontSize:'0.9rem'}}>{iv?.candidate?.email || 'No email'}</p>
+            <span className={`pill ${iv?.status}`} style={{marginTop:8,display:'inline-flex'}}>{iv?.status}</span>
+          </div>
+        </div>
+        <div className="iv-candidate-stats">
+          <div className="iv-cstat"><span>Position</span><strong>{iv?.title}</strong></div>
+          <div className="iv-cstat"><span>Scheduled</span><strong>{iv ? new Date(iv.scheduled_at).toLocaleDateString() : '—'}</strong></div>
+          <div className="iv-cstat"><span>Duration</span><strong>{iv?.duration_minutes} mins</strong></div>
+          <div className="iv-cstat"><span>Interview Rating</span><strong>{iv?.rating ? `${iv.rating}/10` : 'Pending'}</strong></div>
+          <div className="iv-cstat">
+            <span>MCQ Score</span>
+            <strong style={{color: mcqScore != null ? '#1f8f83' : '#9aa2b2'}}>
+              {mcqScore != null ? `${mcqScore}/${mcqTotal}` : 'Not submitted'}
+            </strong>
+          </div>
+          <div className="iv-cstat">
+            <span>Coding Test</span>
+            <strong style={{color: codingDone ? '#1f8f83' : '#9aa2b2'}}>
+              {codingDone ? '✓ Submitted' : 'Not submitted'}
+            </strong>
+          </div>
+        </div>
+        {dbIv.mcq_submitted_at && (
+          <p style={{fontSize:'0.8rem',color:'#9aa2b2',marginTop:8}}>MCQ submitted: {new Date(dbIv.mcq_submitted_at).toLocaleString()}</p>
+        )}
+        {dbIv.coding_submitted_at && (
+          <p style={{fontSize:'0.8rem',color:'#9aa2b2',marginTop:4}}>Coding submitted: {new Date(dbIv.coding_submitted_at).toLocaleString()}</p>
+        )}
+      </section>
+      <InterviewDetails interview={iv} />
+    </div>
+  );
+}
+
 function Stat({ label, value }) {
   return (
     <div className="stat">
@@ -2180,109 +2576,7 @@ function averageScore(interviews) {
   return Math.round((scores.reduce((sum, item) => sum + item, 0) / scores.length) * 10) / 10;
 }
 
-function HrAiPanel() {
-  const [messages, setMessages] = useState([
-    { from: 'ai', text: 'Hello! I am your AI HR interviewer. I will ask you some common HR questions. Take your time and answer thoughtfully. Would you like to begin?' }
-  ]);
-  const [input, setInput] = useState('');
-  const [phase, setPhase] = useState('intro');
-  const bottomRef = React.useRef(null);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
-  const hrQuestions = [
-    'Tell me about yourself and your background.',
-    'Why do you want to work in this role?',
-    'What are your greatest strengths and weaknesses?',
-    'Describe a challenging situation you faced and how you handled it.',
-    'Where do you see yourself in five years?',
-    'Why should we hire you over other candidates?',
-    'Tell me about a time you worked in a team to achieve a goal.',
-    'What motivates you to perform your best?',
-    'How do you handle criticism or feedback?',
-    'Do you have any questions for us?'
-  ];
-  const [qIndex, setQIndex] = useState(-1);
-
-  function send(e) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text) return;
-    setMessages(prev => [...prev, { from: 'user', text }]);
-    setInput('');
-
-    if (phase === 'intro') {
-      setMessages(prev => [...prev, { from: 'ai', text: 'Great! Let us begin with the first question.' }]);
-      setQIndex(0);
-      setPhase('ongoing');
-      setTimeout(() => {
-        setMessages(prev => [...prev, { from: 'ai', text: hrQuestions[0] }]);
-      }, 600);
-    } else if (qIndex < hrQuestions.length - 1) {
-      const next = qIndex + 1;
-      setTimeout(() => {
-        setMessages(prev => [...prev, { from: 'ai', text: hrQuestions[next] }]);
-        setQIndex(next);
-      }, 800);
-    } else {
-      setPhase('done');
-      setTimeout(() => {
-        setMessages(prev => [...prev, { from: 'ai', text: 'Thank you for completing the HR interview round! Your responses have been recorded and will be reviewed by the hiring team. Good luck! 🎯' }]);
-      }, 600);
-    }
-  }
-
-  const suggestedQs = [
-    'Yes, I am ready!',
-    'Tell me about yourself',
-    'What are my strengths?',
-    'Why should we hire you?'
-  ];
-
-  return (
-    <section className="panel">
-      <h2><MessageSquareText size={20} /> HR AI Interview</h2>
-      <div className="cd-ai-avatar">
-        <div className="cd-ai-avatar-circle">🤖</div>
-        <div>
-          <strong>AI HR Interviewer</strong>
-          <p style={{margin:0,color:'#b8c0ce',fontSize:'0.85rem'}}>Powered by smart questioning</p>
-        </div>
-      </div>
-
-      <div className="chat-panel">
-        {messages.map((msg, i) => (
-          <div key={i} className={`chat-line ${msg.from}`}>{msg.text}</div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
-
-      {phase === 'done' ? (
-        <div className="cd-result-box" style={{textAlign:'center',padding:20}}>
-          <CheckCircle2 size={36} color="#1f8f83" />
-          <p style={{fontWeight:700,marginTop:8}}>HR Interview Completed</p>
-        </div>
-      ) : (
-        <form className="inline-form" onSubmit={send}>
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder={phase === 'intro' ? 'Type "Yes" to begin or ask a question...' : 'Type your answer...'}
-          />
-          <button className="primary" type="submit"><MessageSquareText size={16} /> Send</button>
-        </form>
-      )}
-
-      {phase === 'intro' && (
-        <div className="cd-ai-suggested">
-          {suggestedQs.map((sq, i) => (
-            <button key={i} type="button" onClick={() => { setInput(sq); }}>{sq}</button>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
 
 function CandidateResult({ interview }) {
   if (!interview) {
@@ -2404,5 +2698,351 @@ function NotificationList({ interviews }) {
         </div>
       )}
     </section>
+  );
+}
+
+// ── Video Practice Panel ──────────────────────────────────────────────────────
+function VideoPracticePanel() {
+  const videoRef = React.useRef(null);
+  const mediaRef = React.useRef(null);
+  const [recording, setRecording] = React.useState(false);
+  const [blob, setBlob] = React.useState(null);
+  const [error, setError] = React.useState('');
+  const [timer, setTimer] = React.useState(0);
+  const timerRef = React.useRef(null);
+  const chunksRef = React.useRef([]);
+
+  const PROMPTS = [
+    'Tell me about yourself in 2 minutes.',
+    'What is your greatest professional achievement?',
+    'Describe a time you handled a difficult situation.',
+    'Why do you want this role?',
+    'Where do you see yourself in 5 years?',
+  ];
+  const [promptIdx, setPromptIdx] = React.useState(0);
+
+  async function startRecording() {
+    setBlob(null);
+    setError('');
+    chunksRef.current = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      videoRef.current.srcObject = stream;
+      videoRef.current.muted = true;
+      videoRef.current.play();
+      const mr = new MediaRecorder(stream);
+      mediaRef.current = mr;
+      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        const b = new Blob(chunksRef.current, { type: 'video/webm' });
+        setBlob(b);
+        stream.getTracks().forEach(t => t.stop());
+        videoRef.current.srcObject = null;
+      };
+      mr.start();
+      setRecording(true);
+      setTimer(0);
+      timerRef.current = setInterval(() => setTimer(p => p + 1), 1000);
+    } catch (e) {
+      setError('Camera/mic access denied. Please allow permissions and try again.');
+    }
+  }
+
+  function stopRecording() {
+    mediaRef.current?.stop();
+    clearInterval(timerRef.current);
+    setRecording(false);
+  }
+
+  useEffect(() => () => { clearInterval(timerRef.current); mediaRef.current?.stream?.getTracks().forEach(t => t.stop()); }, []);
+
+  const mins = String(Math.floor(timer / 60)).padStart(2, '0');
+  const secs = String(timer % 60).padStart(2, '0');
+
+  return (
+    <section className="panel">
+      <h2><Video size={20} /> Video Practice</h2>
+      <div className="vp-prompt-bar">
+        <span>🎯 Practice Prompt:</span>
+        <strong>{PROMPTS[promptIdx]}</strong>
+        <button className="secondary" style={{minHeight:32,padding:'0 12px',fontSize:'0.82rem'}} onClick={() => setPromptIdx(i => (i + 1) % PROMPTS.length)}>Next prompt →</button>
+      </div>
+      {error && <p style={{color:'#c53030',marginTop:8}}>{error}</p>}
+      <div className="vp-video-wrap">
+        <video ref={videoRef} className="vp-video" playsInline />
+        {recording && <div className="vp-rec-badge">⏱ {mins}:{secs}</div>}
+        {!recording && !blob && (
+          <div className="vp-overlay">
+            <Video size={48} color="#fff" />
+            <p>Camera preview will appear here</p>
+          </div>
+        )}
+      </div>
+      {blob && (
+        <div style={{marginTop:12}}>
+          <p style={{fontWeight:700,marginBottom:6}}>✅ Recording saved — review your answer:</p>
+          <video src={URL.createObjectURL(blob)} controls className="vp-video" style={{borderRadius:10}} />
+          <div style={{display:'flex',gap:10,marginTop:10,flexWrap:'wrap'}}>
+            <a href={URL.createObjectURL(blob)} download="practice.webm" className="secondary" style={{display:'inline-flex',alignItems:'center',gap:6,padding:'0 16px',minHeight:38,borderRadius:8,border:'1.5px solid #cfd7e3',fontWeight:700,textDecoration:'none',color:'#172033'}}>⬇ Download</a>
+            <button className="secondary" onClick={() => { setBlob(null); setTimer(0); }}>🔄 Record Again</button>
+          </div>
+        </div>
+      )}
+      <div style={{display:'flex',gap:12,marginTop:16,flexWrap:'wrap'}}>
+        {!recording
+          ? <button className="primary" onClick={startRecording}><Video size={16} /> Start Recording</button>
+          : <button className="primary" style={{background:'linear-gradient(135deg,#c53030,#e53e3e)'}} onClick={stopRecording}>⏹ Stop Recording</button>
+        }
+      </div>
+      <div className="vp-tips">
+        <strong>💡 Tips for a great answer:</strong>
+        <ul>
+          <li>Look directly at the camera, not the screen</li>
+          <li>Speak clearly and at a moderate pace</li>
+          <li>Use the STAR method for behavioural questions</li>
+          <li>Keep answers between 1–2 minutes</li>
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+// ── Mock Interview Panel ──────────────────────────────────────────────────────
+const MOCK_ROUNDS = [
+  {
+    label: 'HR Round', icon: '🤝', color: '#6366f1',
+    questions: [
+      'Tell me about yourself.',
+      'Why do you want to join our company?',
+      'What are your strengths and weaknesses?',
+      'Describe a conflict you resolved at work.',
+      'Where do you see yourself in 5 years?',
+    ]
+  },
+  {
+    label: 'Technical Round', icon: '💻', color: '#1f8f83',
+    questions: [
+      'Explain the difference between == and === in JavaScript.',
+      'What is the event loop in Node.js?',
+      'How does React reconciliation work?',
+      'What is a REST API? Give an example.',
+      'Explain SQL vs NoSQL databases.',
+    ]
+  },
+  {
+    label: 'Behavioural Round', icon: '🧠', color: '#d97706',
+    questions: [
+      'Tell me about a time you failed and what you learned.',
+      'Describe a situation where you showed leadership.',
+      'How do you prioritise tasks under pressure?',
+      'Give an example of going above and beyond.',
+      'How do you handle disagreements with teammates?',
+    ]
+  },
+];
+
+function MockInterviewPanel({ profile, setMessage }) {
+  const storageKey = `if_mock_${profile?.id}`;
+  const [round, setRound] = React.useState(0);
+  const [qIdx, setQIdx] = React.useState(0);
+  const [answers, setAnswers] = React.useState({});
+  const [input, setInput] = React.useState('');
+  const [done, setDone] = React.useState(false);
+  const [saved, setSaved] = React.useState(() => { try { return JSON.parse(localStorage.getItem(storageKey)) || {}; } catch { return {}; } });
+  const bottomRef = React.useRef(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [answers, qIdx]);
+
+  const currentRound = MOCK_ROUNDS[round];
+  const totalQ = currentRound.questions.length;
+  const key = `${round}-${qIdx}`;
+
+  function submitAnswer(e) {
+    e.preventDefault();
+    if (!input.trim()) return;
+    const updated = { ...answers, [key]: input.trim() };
+    setAnswers(updated);
+    setInput('');
+    if (qIdx < totalQ - 1) {
+      setQIdx(q => q + 1);
+    } else {
+      const allSaved = { ...saved, [round]: updated };
+      setSaved(allSaved);
+      localStorage.setItem(storageKey, JSON.stringify(allSaved));
+      setMessage(`${currentRound.label} completed!`);
+      setDone(true);
+    }
+  }
+
+  function nextRound() {
+    if (round < MOCK_ROUNDS.length - 1) {
+      setRound(r => r + 1);
+      setQIdx(0);
+      setAnswers({});
+      setInput('');
+      setDone(false);
+    }
+  }
+
+  const progress = Math.round((qIdx / totalQ) * 100);
+
+  return (
+    <section className="panel">
+      <h2><Mic size={20} /> Mock Interview</h2>
+      <div className="mock-round-tabs">
+        {MOCK_ROUNDS.map((r, i) => (
+          <button key={i} type="button"
+            className={`mock-round-tab${round === i ? ' active' : ''}${saved[i] ? ' done' : ''}`}
+            onClick={() => { setRound(i); setQIdx(0); setAnswers({}); setInput(''); setDone(false); }}
+            style={round === i ? { borderColor: r.color, color: r.color } : {}}>
+            {r.icon} {r.label} {saved[i] ? '✓' : ''}
+          </button>
+        ))}
+      </div>
+
+      {!done ? (
+        <>
+          <div className="mock-progress-row">
+            <div className="mock-progress-bar"><div className="mock-progress-fill" style={{ width: `${progress}%`, background: currentRound.color }} /></div>
+            <span>{qIdx + 1}/{totalQ}</span>
+          </div>
+          <div className="mock-question-card" style={{ borderColor: currentRound.color + '44' }}>
+            <span className="mock-q-num" style={{ background: currentRound.color }}>Q{qIdx + 1}</span>
+            <p>{currentRound.questions[qIdx]}</p>
+          </div>
+          {Object.entries(answers).filter(([k]) => k.startsWith(`${round}-`)).map(([k, v]) => {
+            const n = parseInt(k.split('-')[1]);
+            return (
+              <div key={k} className="mock-prev-answer">
+                <span style={{ color: currentRound.color, fontWeight: 700 }}>Q{n + 1}:</span> {currentRound.questions[n]}
+                <p>{v}</p>
+              </div>
+            );
+          })}
+          <div ref={bottomRef} />
+          <form className="inline-form" onSubmit={submitAnswer} style={{ marginTop: 16 }}>
+            <textarea value={input} onChange={e => setInput(e.target.value)} placeholder="Type your answer..." style={{ minHeight: 80, resize: 'vertical' }} />
+            <button className="primary" type="submit" style={{ alignSelf: 'flex-end' }}>Submit →</button>
+          </form>
+        </>
+      ) : (
+        <div className="mock-done-card">
+          <CheckCircle2 size={40} color={currentRound.color} />
+          <h3>{currentRound.label} Complete!</h3>
+          <p>You answered all {totalQ} questions. Review your answers below.</p>
+          {round < MOCK_ROUNDS.length - 1 && (
+            <button className="primary" onClick={nextRound}>Next: {MOCK_ROUNDS[round + 1].label} →</button>
+          )}
+          <div className="mock-review-list">
+            {currentRound.questions.map((q, i) => (
+              <div key={i} className="mock-review-item">
+                <strong>Q{i + 1}: {q}</strong>
+                <p>{answers[`${round}-${i}`] || <em style={{ color: '#9aa2b2' }}>No answer</em>}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+
+
+
+
+// ── Progress Tracking Panel ───────────────────────────────────────────────────
+function ProgressTrackingPanel({ profile, interviews }) {
+  const mcqKey = `if_mcq_result_${profile?.id}`;
+  const codingKey = `if_coding_result_${profile?.id}`;
+  const mockKey = `if_mock_${profile?.id}`;
+
+  const mcqData = (() => { try { return JSON.parse(localStorage.getItem(mcqKey)); } catch { return null; } })();
+  const codingDone = (() => { try { return !!JSON.parse(localStorage.getItem(codingKey)); } catch { return false; } })();
+  const mockData = (() => { try { return JSON.parse(localStorage.getItem(mockKey)) || {}; } catch { return {}; } })();
+
+  const reviewed = interviews.filter(i => i.status === 'reviewed');
+  const avgScore = reviewed.length ? Math.round(reviewed.reduce((s, i) => s + Number(i.rating || 0), 0) / reviewed.length * 10) / 10 : 0;
+  const mcqPct = mcqData ? Math.round((mcqData.score / mcqData.total) * 100) : 0;
+  const mockRoundsDone = Object.keys(mockData).length;
+
+  const tasks = [
+    { label: 'Profile Created', done: true, icon: '👤' },
+    { label: 'Resume Uploaded', done: true, icon: '📄' },
+    { label: 'Applied for a Job', done: true, icon: '💼' },
+    { label: 'MCQ Test Submitted', done: !!mcqData, icon: '📝', detail: mcqData ? `${mcqData.score}/${mcqData.total} (${mcqPct}%)` : null },
+    { label: 'Coding Test Submitted', done: codingDone, icon: '💻' },
+    { label: 'Mock Interview Rounds', done: mockRoundsDone >= 3, icon: '🎤', detail: `${mockRoundsDone}/3 rounds` },
+    { label: 'Interview Reviewed', done: reviewed.length > 0, icon: '🏆', detail: reviewed.length > 0 ? `Score: ${avgScore}/10` : null },
+  ];
+
+  const donePct = Math.round((tasks.filter(t => t.done).length / tasks.length) * 100);
+
+  const scores = [
+    { label: 'MCQ', value: mcqPct, color: '#6366f1' },
+    { label: 'Coding', value: codingDone ? 100 : 0, color: '#1f8f83' },
+    { label: 'Mock', value: Math.round((mockRoundsDone / 3) * 100), color: '#d97706' },
+    { label: 'Interview', value: avgScore ? Math.round(avgScore * 10) : 0, color: '#38a169' },
+  ];
+
+  return (
+    <div className="grid" style={{ gap: 18 }}>
+      {/* Overall progress */}
+      <section className="panel">
+        <h2><BarChart3 size={20} /> My Progress — {donePct}% Complete</h2>
+        <div className="prog-overall-bar">
+          <div className="prog-overall-fill" style={{ width: `${donePct}%` }} />
+        </div>
+        <div className="prog-tasks-grid">
+          {tasks.map((t, i) => (
+            <div key={i} className={`prog-task${t.done ? ' done' : ''}`}>
+              <span className="prog-task-icon">{t.icon}</span>
+              <div>
+                <strong>{t.label}</strong>
+                {t.detail && <span className="prog-task-detail">{t.detail}</span>}
+              </div>
+              <span className={`prog-task-status${t.done ? ' done' : ''}`}>{t.done ? '✓' : '○'}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Score breakdown */}
+      <section className="panel">
+        <h2><Star size={20} /> Score Breakdown</h2>
+        <div className="prog-scores-grid">
+          {scores.map(s => (
+            <div key={s.label} className="prog-score-card">
+              <div className="prog-score-ring" style={{ '--pct': s.value, '--clr': s.color }}>
+                <span>{s.value}%</span>
+              </div>
+              <strong>{s.label}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Interview history */}
+      {interviews.length > 0 && (
+        <section className="panel">
+          <h2><CalendarClock size={20} /> Interview History</h2>
+          <div className="adm-iv-list">
+            {interviews.map(iv => (
+              <div className="adm-iv-row" key={iv.id}>
+                <div className="adm-iv-avatar">{(iv.title || 'I')[0].toUpperCase()}</div>
+                <div className="adm-iv-info">
+                  <strong>{iv.title}</strong>
+                  <span>{new Date(iv.scheduled_at).toLocaleDateString()} · {iv.interviewer?.full_name || 'Interviewer'}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <span className={`pill ${iv.status}`}>{iv.status}</span>
+                  {iv.rating && <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1f8f83' }}>{iv.rating}/10</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
   );
 }

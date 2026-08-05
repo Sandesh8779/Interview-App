@@ -198,4 +198,43 @@ router.patch('/:id/review', requireAuth, requireRole('interviewer'), async (req,
   }
 });
 
+// Candidate: save MCQ score
+router.patch('/:id/mcq-score', requireAuth, requireRole('candidate'), async (req, res, next) => {
+  try {
+    const { mcq_score, mcq_total } = req.body;
+    const { data: interview, error: fetchError } = await supabaseAdmin
+      .from('interviews').select('candidate_id').eq('id', req.params.id).single();
+    if (fetchError) throw fetchError;
+    if (interview.candidate_id !== req.profile.id)
+      return res.status(403).json({ message: 'Not your interview.' });
+
+    const { data, error } = await supabaseAdmin
+      .from('interviews')
+      .update({ mcq_score, mcq_total, mcq_submitted_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(interviewSelect).single();
+    if (error) throw error;
+    res.json(data);
+  } catch (e) { next(e); }
+});
+
+// Candidate: mark coding test submitted
+router.patch('/:id/coding-submit', requireAuth, requireRole('candidate'), async (req, res, next) => {
+  try {
+    const { data: interview, error: fetchError } = await supabaseAdmin
+      .from('interviews').select('candidate_id').eq('id', req.params.id).single();
+    if (fetchError) throw fetchError;
+    if (interview.candidate_id !== req.profile.id)
+      return res.status(403).json({ message: 'Not your interview.' });
+
+    const { data, error } = await supabaseAdmin
+      .from('interviews')
+      .update({ coding_submitted: true, coding_submitted_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select(interviewSelect).single();
+    if (error) throw error;
+    res.json(data);
+  } catch (e) { next(e); }
+});
+
 export default router;
