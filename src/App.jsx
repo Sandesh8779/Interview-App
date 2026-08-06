@@ -10,6 +10,8 @@ import {
   ClipboardList,
   Code2,
   Download,
+  Eye,
+  EyeOff,
   FileSpreadsheet,
   FileText,
   GraduationCap,
@@ -90,6 +92,7 @@ export default function App() {
   }
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const activeInterview = useMemo(
     () => interviews.find((interview) => interview.id === activeInterviewId) || interviews[0],
@@ -97,15 +100,55 @@ export default function App() {
   );
 
   async function loadData() {
-    const me = await api('/profiles/me');
-    setProfile(me);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const currentSession = data.session;
 
-    const list = await api('/interviews');
-    setInterviews(list);
-    if (!activeInterviewId && list[0]) setActiveInterviewId(list[0].id);
+      if (!currentSession) {
+        if (adminBypass) {
+          setProfile(adminBypass);
+          setInterviews([]);
+          setProfiles([]);
+          setActiveInterviewId(null);
+          return;
+        }
 
-    if (me.role === 'admin') {
-      setProfiles(await api('/profiles'));
+        setProfile(null);
+        setInterviews([]);
+        setProfiles([]);
+        setActiveInterviewId(null);
+        return;
+      }
+
+      const me = await api('/profiles/me');
+      setProfile(me);
+
+      const list = await api('/interviews');
+      setInterviews(list);
+      if (!activeInterviewId && list[0]) setActiveInterviewId(list[0].id);
+
+      if (me.role === 'admin') {
+        setProfiles(await api('/profiles'));
+      } else {
+        setProfiles([]);
+      }
+    } catch (error) {
+      setMessage(error.message || 'Unable to refresh dashboard data right now.');
+      throw error;
+    }
+  }
+
+  async function handleRefresh() {
+    if (refreshing) return;
+
+    try {
+      setRefreshing(true);
+      await loadData();
+      setMessage('Dashboard refreshed.');
+    } catch {
+      // Error state is already surfaced in loadData.
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -197,7 +240,7 @@ export default function App() {
       if (authMode === 'home') {
         return <HomePage setMode={setAuthMode} onAdminBypass={adminBypassLogin} />;
       }
-      return <AuthScreen mode={authMode} setMode={setAuthMode} setMessage={setMessage} message={message} />;
+      return <AuthScreen mode={authMode} setMode={setAuthMode} setMessage={setMessage} />;
     }
   }
 
@@ -244,9 +287,9 @@ export default function App() {
             <h1>{menu.find((item) => item.id === activeSection)?.label || 'Dashboard'}</h1>
             </div>
           </div>
-          <button className="primary" onClick={loadData}>
+          <button className="primary" onClick={handleRefresh} disabled={refreshing}>
             <CheckCircle2 size={18} />
-            Refresh
+            {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </header>
 
@@ -525,9 +568,19 @@ function getMenu(role) {
   ];
 }
 
-function AuthScreen({ mode, setMode, message, setMessage }) {
+function AuthScreen({ mode, setMode, setMessage }) {
   const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', role: 'candidate' });
+  const [showPassword, setShowPassword] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [resetDone, setResetDone] = useState(false);
   const isSignUp = mode === 'signup';
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.includes('type=recovery')) setResetMode(true);
+  }, []);
 
   async function submit(event) {
     event.preventDefault();
@@ -559,18 +612,81 @@ function AuthScreen({ mode, setMode, message, setMessage }) {
   async function sendPasswordReset() {
     const email = form.email.trim();
     if (!email) {
-      setMessage('Enter your email first so we can send a reset link.');
+      setResetMsg('Enter your email above first, then click Forgot password.');
+      return;
+    }
+    setResetMsg('Sending...');
+    try {
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/?page=signin`
+      });
+      console.log('reset result:', { data, error });
+      if (error) throw error;
+      setResetMsg('✅ Reset email sent! Check your inbox and click the link to set a new password.');
+    } catch (err) {
+      console.error('reset error:', err);
+      setResetMsg('Error: ' + (err.message || 'Password reset could not be sent.'));
+    }
+  }
+
+  async function handleNewPassword(e) {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setMessage('Password must be at least 6 characters.');
       return;
     }
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/`
-      });
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
-      setMessage('Password reset email sent. Follow the link in your inbox.');
+      setResetDone(true);
+      setResetMode(false);
+      window.location.hash = '';
+      setMessage('Password updated successfully. You can now sign in.');
     } catch (err) {
-      setMessage(err.message || 'Password reset could not be sent.');
+      setMessage(err.message || 'Could not update password.');
     }
+  }
+
+  if (resetMode) {
+    return (
+      <main className="auth-page">
+        <div className="auth-left">
+          <div className="auth-left-brand"><ShieldCheck size={26} /><span>InterviewFlow</span></div>
+          <h2>Set a new password.</h2>
+          <p>Enter your new password below. Make sure it is at least 6 characters long.</p>
+        </div>
+        <div className="auth-right">
+          <section className="auth-panel">
+            <div className="brand large" style={{cursor:'pointer'}} onClick={() => setMode('home')}>
+              <ShieldCheck /><span>InterviewFlow</span>
+            </div>
+            <h1>Reset your password</h1>
+            <form onSubmit={handleNewPassword}>
+              <label>
+                New password
+                <div style={{position:'relative'}}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    minLength="6"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    required
+                    placeholder="Enter new password"
+                    style={{paddingRight:42}}
+                    autoFocus
+                  />
+                  <button type="button" onClick={() => setShowPassword(p => !p)}
+                    style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',border:'none',background:'transparent',cursor:'pointer',color:'#6b7280',display:'grid',placeItems:'center',padding:0}}>
+                    {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
+                  </button>
+                </div>
+              </label>
+              <button className="primary full" type="submit">Update Password</button>
+            </form>
+          </section>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -619,7 +735,37 @@ function AuthScreen({ mode, setMode, message, setMessage }) {
             </label>
             <label>
               Password
-              <input type="password" minLength="6" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  minLength="6"
+                  value={form.password}
+                  onChange={(event) => setForm({ ...form, password: event.target.value })}
+                  required
+                  style={{ paddingRight: 42 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  style={{
+                    position: 'absolute',
+                    right: 10,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    color: '#6b7280',
+                    display: 'grid',
+                    placeItems: 'center',
+                    padding: 0
+                  }}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </label>
             {isSignUp && (
               <label>
@@ -633,15 +779,17 @@ function AuthScreen({ mode, setMode, message, setMessage }) {
             )}
             <button className="primary full" type="submit">{isSignUp ? 'Create account' : 'Sign in'}</button>
           </form>
-          {message && <div className="notice">{message}</div>}
-          <button className="link-button" onClick={() => setMode(isSignUp ? 'signin' : 'signup')}>
-            {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Register'}
-          </button>
-          {!isSignUp && (
-            <button className="link-button" type="button" onClick={sendPasswordReset}>
-              Forgot password?
+          <div style={{display:'flex', flexDirection:'column', gap:0, marginTop:18}}>
+            <button className="link-button" style={{marginTop:0}} onClick={() => setMode(isSignUp ? 'signin' : 'signup')}>
+              {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Register'}
             </button>
-          )}
+            {!isSignUp && (
+              <button className="link-button" type="button" style={{marginTop:0}} onClick={sendPasswordReset}>
+                Forgot password?
+              </button>
+            )}
+            {resetMsg && <p style={{fontSize:'0.85rem',marginTop:8,color:resetMsg.startsWith('✅')?'#1f8f83':'#c53030',textAlign:'center'}}>{resetMsg}</p>}
+          </div>
         </section>
       </div>
     </main>
