@@ -29,3 +29,21 @@ export async function api(path, options = {}) {
 
   return body;
 }
+
+// Candidate results helpers
+export async function listCandidateResults(query = {}) {
+  const params = new URLSearchParams(query).toString();
+  return api(`/candidate-results${params ? `?${params}` : ''}`);
+}
+
+export async function createCandidateResult(payload) {
+  return api('/candidate-results', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function getCandidateResult(id) {
+  return api(`/candidate-results/${id}`);
+}
+
+export async function deleteCandidateResult(id) {
+  return api(`/candidate-results/${id}`, { method: 'DELETE' });
+}
