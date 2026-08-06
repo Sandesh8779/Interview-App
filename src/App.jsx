@@ -173,7 +173,20 @@ export default function App() {
   }
 
   if (loading) {
-    return <div className="boot">Loading InterviewFlow...</div>;
+    return (
+      <div className="boot">
+        <div className="loading-skeleton" style={{ width: 'min(820px, 100%)' }}>
+          <div className="skeleton-card" />
+          <div className="skeleton-line" style={{ width: '40%' }} />
+          <div className="skeleton-line" style={{ width: '70%' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+            <div className="skeleton-chip" />
+            <div className="skeleton-chip" />
+            <div className="skeleton-chip" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!session) {
@@ -513,7 +526,7 @@ function getMenu(role) {
 }
 
 function AuthScreen({ mode, setMode, message, setMessage }) {
-  const [form, setForm] = useState({ fullName: '', email: '', password: '', role: 'candidate' });
+  const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', role: 'candidate' });
   const isSignUp = mode === 'signup';
 
   async function submit(event) {
@@ -524,7 +537,7 @@ function AuthScreen({ mode, setMode, message, setMessage }) {
       ? await supabase.auth.signUp({
           email: form.email,
           password: form.password,
-          options: { data: { full_name: form.fullName, role: form.role } }
+          options: { data: { full_name: form.fullName, role: form.role, phone: form.phone } }
         })
       : await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
 
@@ -533,8 +546,31 @@ function AuthScreen({ mode, setMode, message, setMessage }) {
       return;
     }
 
-    setMessage(isSignUp ? 'Account created. Check email confirmation if it is enabled in Supabase.' : 'Signed in.');
+    if (isSignUp && form.phone.trim()) {
+      const verifyCode = String(Math.floor(100000 + Math.random() * 900000));
+      localStorage.setItem(`if_phone_verify_${form.phone}`, verifyCode);
+      setMessage(`Account created. Phone verification code ${verifyCode} is ready for demo validation. Check email confirmation if it is enabled in Supabase.`);
+    } else {
+      setMessage(isSignUp ? 'Account created. Check email confirmation if it is enabled in Supabase.' : 'Signed in.');
+    }
     window.location.reload();
+  }
+
+  async function sendPasswordReset() {
+    const email = form.email.trim();
+    if (!email) {
+      setMessage('Enter your email first so we can send a reset link.');
+      return;
+    }
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/`
+      });
+      if (error) throw error;
+      setMessage('Password reset email sent. Follow the link in your inbox.');
+    } catch (err) {
+      setMessage(err.message || 'Password reset could not be sent.');
+    }
   }
 
   return (
@@ -571,6 +607,12 @@ function AuthScreen({ mode, setMode, message, setMessage }) {
                 <input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} required />
               </label>
             )}
+            {isSignUp && (
+              <label>
+                Phone
+                <input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} placeholder="+91 98765 43210" />
+              </label>
+            )}
             <label>
               Email
               <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} required />
@@ -595,6 +637,11 @@ function AuthScreen({ mode, setMode, message, setMessage }) {
           <button className="link-button" onClick={() => setMode(isSignUp ? 'signin' : 'signup')}>
             {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Register'}
           </button>
+          {!isSignUp && (
+            <button className="link-button" type="button" onClick={sendPasswordReset}>
+              Forgot password?
+            </button>
+          )}
         </section>
       </div>
     </main>
@@ -1301,21 +1348,24 @@ function CandidateDashboard({ profile, interviews, activeInterview }) {
   );
 }
 
-function Metric({ icon: Icon, label, value, accent, trend }) {
+function Metric({ icon: Icon, label, value, accent, trend, subtitle }) {
   return (
     <section className={`metric${accent ? ' accent-' + accent : ''}`}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <Icon size={22} />
+      <div className="metric-top">
+        <div className="metric-icon-wrap">
+          <Icon size={22} />
+        </div>
         {trend !== undefined && (
-          <span style={{fontSize:'0.78rem',fontWeight:700,display:'flex',alignItems:'center',gap:3,color: trend >= 0 ? '#38a169' : '#e53e3e'}}>
-            <span style={{fontSize:'0.7rem'}}>{trend >= 0 ? '↑' : '↓'}</span>
+          <span className={`metric-trend ${trend >= 0 ? 'up' : 'down'}`}>
+            <span className="metric-trend-arrow">{trend >= 0 ? '↑' : '↓'}</span>
             {Math.abs(trend)}%
           </span>
         )}
       </div>
-      <div>
+      <div className="metric-body">
         <span>{label}</span>
         <strong>{value}</strong>
+        {subtitle && <small>{subtitle}</small>}
       </div>
     </section>
   );
@@ -1326,7 +1376,7 @@ function TrendChart({ values, labels }) {
   return (
     <div className="chart">
       {values.map((value, index) => (
-        <div className="bar-wrap" key={labels[index]}>
+        <div className="bar-wrap" key={`${labels[index]}-${index}`}>
           <div className="bar" style={{ height: `${Math.max((value / max) * 100, 12)}%` }} />
           <span>{labels[index]}</span>
         </div>
@@ -1341,8 +1391,9 @@ function PeopleManager({ title, people, allProfiles, changeRole }) {
       <h2><Users size={20} /> {title}</h2>
       <div className="table-list">
         {(people.length ? people : allProfiles).map((person) => (
-          <div className="row" key={person.id}>
-            <div>
+          <div className="row person-row" key={person.id}>
+            <div className="person-avatar-badge">{(person.full_name || 'U')[0].toUpperCase()}</div>
+            <div className="person-row-main">
               <strong>{person.full_name}</strong>
               <span>{person.email}</span>
             </div>
@@ -1506,6 +1557,7 @@ function ReportsPanel({ interviews, candidates, interviewers }) {
   const passRate = totalScores.length ? Math.round(totalScores.filter(iv => Number(iv.rating) >= 7).length / totalScores.length * 100) : 0;
 
   const monthlyData = [8, 12, 10, 18, 16, Math.max(interviews.length, 6)];
+  const trendGrowth = interviews.length ? Math.max(4, Math.round((passRate / 100) * 12)) : 0;
 
   function downloadReport(type) {
     setDownloading(type);
@@ -1545,9 +1597,9 @@ function ReportsPanel({ interviews, candidates, interviewers }) {
   return (
     <div className="grid">
       <div className="metric-grid three">
-        <Metric icon={CalendarClock} label="Total Interviews" value={interviews.length} />
-        <Metric icon={CheckCircle2} label="Reviewed" value={totals.reviewed} />
-        <Metric icon={Star} label="Avg Score" value={avgScore + '/10'} />
+        <Metric icon={CalendarClock} label="Total Interviews" value={interviews.length} accent="blue" trend={12} subtitle="This month" />
+        <Metric icon={CheckCircle2} label="Reviewed" value={totals.reviewed} accent="green" trend={8} subtitle="Round complete" />
+        <Metric icon={Star} label="Avg Score" value={avgScore + '/10'} accent="amber" trend={avgScore >= 7 ? 6 : -2} subtitle={`${passRate}% pass rate`} />
       </div>
       <div className="grid two">
         <section className="panel">
@@ -1685,6 +1737,32 @@ function CandidateDetails({ interview }) {
   );
 }
 
+function parseResumeToProfile(text) {
+  const normalized = text.replace(/\r/g, ' ').replace(/\s+/g, ' ').trim();
+  const email = normalized.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '';
+  const phone = normalized.match(/(\+?\d{1,3}[\s-]?)?(\(?\d{2,4}\)?[\s-]?)\d{3}[\s-]?\d{4}/)?.[0] || '';
+  const linkedIn = normalized.match(/https?:\/\/linkedin\.com\/in\/[^\s]+/i)?.[0] || '';
+  const github = normalized.match(/https?:\/\/github\.com\/[^\s]+/i)?.[0] || '';
+  const portfolio = normalized.match(/https?:\/\/[^\s]+/i)?.[0] || '';
+  const skillsMatch = normalized.match(/skills[^\n]{0,120}([A-Za-z, /&+-]{3,120})/i);
+  const educationMatch = normalized.match(/education[^\n]{0,120}([A-Za-z, /&+-]{3,120})/i);
+  const experienceMatch = normalized.match(/experience[^\n]{0,120}([A-Za-z, /&+-]{3,120})/i);
+
+  return {
+    email,
+    phone,
+    skills: skillsMatch?.[1]?.trim() || 'React, Node.js, JavaScript, SQL, Python',
+    education: educationMatch?.[1]?.trim() || 'B.Tech / Relevant certification',
+    experience: experienceMatch?.[1]?.trim() || '2+ years of hands-on development experience',
+    linkedin: linkedIn,
+    github: github,
+    portfolio: portfolio,
+    location: normalized.match(/(Bengaluru|Delhi|Mumbai|Hyderabad|Chennai|Pune|India|United States|Canada|Singapore)[^\n]{0,40}/i)?.[0] || 'India',
+    preferred_course: 'Frontend Developer',
+    preferred_role: 'Frontend Developer'
+  };
+}
+
 function ResumeViewer() {
   return (
     <section className="panel">
@@ -1718,7 +1796,26 @@ function EvaluationPanel({ title, items }) {
 }
 
 function ProfilePanel({ profile, setMessage, reload }) {
-  const [form, setForm] = useState({ full_name: profile.full_name, phone: '+91 98765 43210', skills: 'React, Node.js, JavaScript, SQL, Python', bio: 'Passionate full-stack developer with 2+ years of experience building web applications. Currently pursuing B.Tech in Computer Science.' });
+  const [form, setForm] = useState(() => {
+    const saved = (() => { try { return JSON.parse(localStorage.getItem(`if_profile_meta_${profile.id}`)); } catch { return null; } })();
+    const resumeMatch = (() => { try { return JSON.parse(localStorage.getItem(`if_resume_meta_${profile.id}`)); } catch { return null; } })();
+    return {
+      full_name: profile.full_name,
+      phone: saved?.phone || resumeMatch?.phone || '+91 98765 43210',
+      skills: saved?.skills || resumeMatch?.skills || 'React, Node.js, JavaScript, SQL, Python',
+      bio: saved?.bio || 'Passionate full-stack developer with 2+ years of experience building web applications. Currently pursuing B.Tech in Computer Science.',
+      education: saved?.education || resumeMatch?.education || 'B.Tech in Computer Science',
+      experience: saved?.experience || resumeMatch?.experience || '2+ years in full-stack web development',
+      location: saved?.location || resumeMatch?.location || 'Bengaluru, India',
+      portfolio: saved?.portfolio || resumeMatch?.portfolio || 'https://portfolio.example.com',
+      linkedin: saved?.linkedin || resumeMatch?.linkedin || 'https://linkedin.com/in/example',
+      github: saved?.github || resumeMatch?.github || 'https://github.com/example',
+      preferred_course: saved?.preferred_course || resumeMatch?.preferred_course || 'Frontend Developer',
+      preferred_role: saved?.preferred_role || resumeMatch?.preferred_role || 'Frontend Developer',
+      consent: saved?.consent ?? true,
+      visibility: saved?.visibility || 'private'
+    };
+  });
   const [saving, setSaving] = useState(false);
 
   async function save(e) {
@@ -1727,6 +1824,7 @@ function ProfilePanel({ profile, setMessage, reload }) {
     try {
       const { error } = await supabase.from('profiles').update({ full_name: form.full_name }).eq('id', profile.id);
       if (error) throw error;
+      localStorage.setItem(`if_profile_meta_${profile.id}`, JSON.stringify(form));
       setMessage('Profile updated.');
       await reload();
     } catch (err) { setMessage(err.message); }
@@ -1754,8 +1852,24 @@ function ProfilePanel({ profile, setMessage, reload }) {
         <label>Full name<input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} required /></label>
         <label>Email<input value={profile.email} disabled /></label>
         <label>Phone<input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+91 00000 00000" /></label>
+        <label>Location<input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="City, Country" /></label>
+        <label>Education<input value={form.education} onChange={e => setForm({ ...form, education: e.target.value })} placeholder="Degree / qualification" /></label>
+        <label>Experience<input value={form.experience} onChange={e => setForm({ ...form, experience: e.target.value })} placeholder="Years / domain experience" /></label>
+        <label>Preferred course<input value={form.preferred_course} onChange={e => setForm({ ...form, preferred_course: e.target.value })} placeholder="Frontend Developer" /></label>
+        <label>Preferred role<input value={form.preferred_role} onChange={e => setForm({ ...form, preferred_role: e.target.value })} placeholder="Target role" /></label>
+        <label>Portfolio<input value={form.portfolio} onChange={e => setForm({ ...form, portfolio: e.target.value })} placeholder="https://" /></label>
+        <label>LinkedIn<input value={form.linkedin} onChange={e => setForm({ ...form, linkedin: e.target.value })} placeholder="https://linkedin.com/in/..." /></label>
+        <label>GitHub<input value={form.github} onChange={e => setForm({ ...form, github: e.target.value })} placeholder="https://github.com/..." /></label>
         <label>Skills<input value={form.skills} onChange={e => setForm({ ...form, skills: e.target.value })} placeholder="React, Node.js, SQL" /></label>
-        <label style={{gridColumn:'1/-1'}}>Bio<textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} placeholder="Tell us about yourself" /></label>
+        <label>Profile visibility<select value={form.visibility} onChange={e => setForm({ ...form, visibility: e.target.value })}><option value="private">Private</option><option value="reviewers">Reviewers only</option><option value="public">Public</option></select></label>
+        <label style={{gridColumn:'1/-1'}}>
+          Bio
+          <textarea value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} placeholder="Tell us about yourself" />
+        </label>
+        <label style={{gridColumn:'1/-1', display:'flex', flexDirection:'row', alignItems:'center', gap:10}}>
+          <input type="checkbox" checked={form.consent} onChange={e => setForm({ ...form, consent: e.target.checked })} />
+          <span>I consent to the interview platform processing my profile and resume data for review.</span>
+        </label>
         <button className="primary" type="submit" disabled={saving}><CheckCircle2 size={18} /> {saving ? 'Saving...' : 'Save Profile'}</button>
       </form>
     </section>
@@ -1768,6 +1882,7 @@ function UploadPanel({ profile, setMessage }) {
   const [url, setUrl] = useState(null);
   const [progress, setProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [parsedSummary, setParsedSummary] = useState(null);
 
   async function upload() {
     if (!file) return;
@@ -1782,7 +1897,11 @@ function UploadPanel({ profile, setMessage }) {
       setProgress(100);
       const { data } = supabase.storage.from('resumes').getPublicUrl(path);
       setUrl(data.publicUrl);
-      setMessage('Resume uploaded successfully.');
+      const parsed = await file.text().catch(() => '');
+      const resumeMeta = parseResumeToProfile(parsed || `Resume: ${file.name}`);
+      setParsedSummary(resumeMeta);
+      localStorage.setItem(`if_resume_meta_${profile.id}`, JSON.stringify(resumeMeta));
+      setMessage('Resume uploaded successfully and parsed for profile pre-fill.');
       setTimeout(() => setProgress(0), 1500);
     } catch (err) { setMessage('Upload failed: ' + err.message); setProgress(0); }
     setUploading(false);
@@ -1818,6 +1937,16 @@ function UploadPanel({ profile, setMessage }) {
         {(uploading || progress > 0) && (
           <div className="cd-upload-progress">
             <div className="cd-upload-progress-bar" style={{width:`${progress}%`}} />
+          </div>
+        )}
+        {parsedSummary && (
+          <div style={{marginTop:12, padding:12, borderRadius:10, background:'#f6f7f9', fontSize:'0.82rem', color:'#475467', textAlign:'left'}}>
+            <strong style={{display:'block', marginBottom:6}}>Resume auto-fill preview</strong>
+            <div>Skills: {parsedSummary.skills}</div>
+            <div>Education: {parsedSummary.education}</div>
+            <div>Experience: {parsedSummary.experience}</div>
+            <div>Location: {parsedSummary.location}</div>
+            <div>Profile links captured: {parsedSummary.linkedin || parsedSummary.github || parsedSummary.portfolio ? 'Yes' : 'No'}</div>
           </div>
         )}
         {url && <a href={url} target="_blank" rel="noreferrer" style={{color:'#1f8f83',fontWeight:700,fontSize:'0.92rem',marginTop:8,display:'inline-flex',alignItems:'center',gap:6}}><FileText size={16} /> View Uploaded Resume</a>}
@@ -2183,6 +2312,14 @@ function CodingTest({ profile, setMessage, activeInterview }) {
   );
 }
 function InterviewTable({ interviews = [] }) {
+  const iconByStatus = {
+    scheduled: CalendarClock,
+    in_progress: ClipboardCheck,
+    submitted: Upload,
+    reviewed: CheckCircle2,
+    cancelled: ShieldCheck,
+  };
+
   return (
     <section className="panel">
       <h2><CalendarClock size={20} /> View Interview Status</h2>
@@ -2190,15 +2327,21 @@ function InterviewTable({ interviews = [] }) {
         <p className="muted">No interviews scheduled yet.</p>
       ) : (
         <div className="table-list">
-          {interviews.map((interview) => (
-            <div className="row status-row" key={interview.id}>
-              <div>
-                <strong>{interview.title}</strong>
-                <span>{interview.candidate?.full_name || 'Candidate'} with {interview.interviewer?.full_name || 'Interviewer'}</span>
+          {interviews.map((interview) => {
+            const StatusIcon = iconByStatus[interview.status] || CalendarClock;
+            return (
+              <div className="row status-row" key={interview.id}>
+                <div className="status-row-left">
+                  <div className="status-row-icon"><StatusIcon size={16} /></div>
+                  <div>
+                    <strong>{interview.title}</strong>
+                    <span>{interview.candidate?.full_name || 'Candidate'} with {interview.interviewer?.full_name || 'Interviewer'}</span>
+                  </div>
+                </div>
+                <span className={`pill ${interview.status}`}>{interview.status}</span>
               </div>
-              <span className={`pill ${interview.status}`}>{interview.status}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
@@ -2268,11 +2411,24 @@ function AdminRequestsPanel({ interviewers, setMessage }) {
 
   async function load() {
     setLoading(true);
-    try { setRequests(await api('/requests')); } catch (e) { setMessage(e.message); }
+    try {
+      const nextRequests = await api('/requests');
+      const merged = nextRequests.map((request) => {
+        const meta = (() => { try { return JSON.parse(localStorage.getItem(`if_request_meta_${request.id}`)); } catch { return null; } })();
+        return meta ? { ...request, ...meta } : request;
+      });
+      setRequests(merged);
+    } catch (e) { setMessage(e.message); }
     setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
+
+  function pushNotification(text) {
+    const store = (() => { try { return JSON.parse(localStorage.getItem('if_notifications') || '[]'); } catch { return []; } })();
+    store.unshift({ text, when: new Date().toISOString() });
+    localStorage.setItem('if_notifications', JSON.stringify(store.slice(0, 10)));
+  }
 
   async function action(id, status) {
     try {
@@ -2280,20 +2436,65 @@ function AdminRequestsPanel({ interviewers, setMessage }) {
         method: 'PATCH',
         body: JSON.stringify({ status, interviewer_id: assignMap[id] || undefined })
       });
+      const meta = (() => { try { return JSON.parse(localStorage.getItem(`if_request_meta_${id}`)); } catch { return null; } })();
+      const label = {
+        approved: 'Admin approved request',
+        rejected: 'Admin rejected request',
+        escalated: 'Admin escalated request',
+        'under_review': 'Admin moved request to under review',
+        'on_hold': 'Admin put request on hold'
+      }[status] || `Admin updated request to ${status}`;
+      const nextTimeline = [
+        ...(meta?.timeline || []),
+        { label, when: new Date().toISOString() }
+      ];
+      if (meta) {
+        localStorage.setItem(`if_request_meta_${id}`, JSON.stringify({ ...meta, timeline: nextTimeline, status }));
+      }
+      pushNotification(`${status.toUpperCase()} notification logged for request ${id}`);
       setMessage(`Request ${status}.`);
       load();
     } catch (e) { setMessage(e.message); }
   }
 
+  function exportCsv() {
+    const rows = requests.map((r) => ({
+      reference: r.reference || '',
+      candidate: r.candidate?.full_name || '',
+      email: r.candidate?.email || '',
+      status: r.status || '',
+      job: r.job_title || '',
+      interview_type: r.interview_type || '',
+      preferred_slots: r.preferred_slots || '',
+      language: r.language || '',
+      accessibility: r.accessibility || ''
+    }));
+    const header = Object.keys(rows[0] || {}).join(',');
+    const csv = [header, ...rows.map((row) => Object.values(row).map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'interview-requests-report.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+    setMessage('CSV export generated for the current request view.');
+  }
+
   const pending  = requests.filter(r => r.status === 'pending');
   const resolved = requests.filter(r => r.status !== 'pending');
+  const slaOverdue = requests.filter(r => r.status === 'pending').length;
 
   return (
     <div className="grid" style={{gap:20}}>
       <section className="panel">
         <div className="adm-panel-hd" style={{marginBottom:18}}>
           <h2><Bell size={20}/> Interviewer Requests</h2>
-          <span className="adm-badge">{pending.length} pending</span>
+          <span className="adm-badge">{pending.length} pending · SLA {slaOverdue > 0 ? 'alert' : 'healthy'}</span>
+        </div>
+        <div style={{display:'flex', gap:10, flexWrap:'wrap', marginBottom:16}}>
+          <button className="secondary" type="button" onClick={exportCsv}>Export CSV</button>
+          <span className="adm-badge">{requests.length} total requests</span>
         </div>
         {loading ? <p className="muted">Loading…</p> : pending.length === 0 ? (
           <div className="req-empty"><CheckCircle2 size={32} color="#49b7a8"/><p>No pending requests.</p></div>
@@ -2305,12 +2506,20 @@ function AdminRequestsPanel({ interviewers, setMessage }) {
                   <div className="req-avatar">{(r.candidate?.full_name||'C')[0].toUpperCase()}</div>
                   <div className="req-info">
                     <strong>{r.candidate?.full_name || 'Candidate'}</strong>
+                    <span>{r.reference || 'Reference pending'}</span>
                     <span>{r.candidate?.email}</span>
                     <span className="req-job">{r.job_title}</span>
                   </div>
                   <span className="req-pill pending">Pending</span>
                 </div>
                 {r.message && <p className="req-msg">"{r.message}"</p>}
+                <div style={{marginTop:10, fontSize:'0.8rem', color:'#697386', display:'grid', gap:4}}>
+                  {r.interview_type && <span>Type: {r.interview_type}</span>}
+                  {r.course_track && <span>Track: {r.course_track}</span>}
+                  {r.preferred_slots && <span>Preferred slots: {r.preferred_slots}</span>}
+                  {r.language && <span>Language: {r.language}</span>}
+                  {r.accessibility && <span>Accessibility: {r.accessibility}</span>}
+                </div>
                 <div className="req-actions">
                   <select
                     value={assignMap[r.id] || ''}
@@ -2323,7 +2532,10 @@ function AdminRequestsPanel({ interviewers, setMessage }) {
                   <button className="primary" style={{minHeight:36,padding:'0 16px'}} onClick={() => action(r.id,'approved')}>
                     <CheckCircle2 size={15}/> Approve
                   </button>
+                  <button className="secondary" style={{minHeight:36,padding:'0 16px'}} onClick={() => action(r.id,'under_review')}>Under review</button>
+                  <button className="secondary" style={{minHeight:36,padding:'0 16px'}} onClick={() => action(r.id,'on_hold')}>On hold</button>
                   <button className="req-reject-btn" onClick={() => action(r.id,'rejected')}>Reject</button>
+                  <button className="req-reject-btn" onClick={() => action(r.id,'escalated')}>Escalate</button>
                 </div>
               </div>
             ))}
@@ -2344,11 +2556,24 @@ function AdminRequestsPanel({ interviewers, setMessage }) {
                   <div className="req-avatar">{(r.candidate?.full_name||'C')[0].toUpperCase()}</div>
                   <div className="req-info">
                     <strong>{r.candidate?.full_name}</strong>
+                    <span>{r.reference || 'Reference pending'}</span>
                     <span>{r.job_title}</span>
                     {r.interviewer && <span>Assigned: {r.interviewer.full_name}</span>}
                   </div>
                   <span className={`req-pill ${r.status}`}>{r.status}</span>
                 </div>
+                {Array.isArray(r.timeline) && r.timeline.length > 0 && (
+                  <div style={{marginTop:12, padding:'10px 12px', borderRadius:8, background:'#f6f7f9'}}>
+                    <strong style={{fontSize:'0.8rem'}}>Audit timeline</strong>
+                    <div style={{display:'grid', gap:6, marginTop:6}}>
+                      {r.timeline.map((step, idx) => (
+                        <div key={`${step.label}-${idx}`} style={{fontSize:'0.78rem', color:'#697386'}}>
+                          • {step.label} · {new Date(step.when).toLocaleString()}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2360,24 +2585,68 @@ function AdminRequestsPanel({ interviewers, setMessage }) {
 
 // ── Candidate: submit a request for interviewer assignment ────────────────────
 function RequestInterviewerPanel({ profile, setMessage }) {
-  const [form, setForm] = useState({ job_title: '', message: '' });
+  const [form, setForm] = useState({
+    job_title: '',
+    message: '',
+    interview_type: 'Technical',
+    preferred_slots: 'Weekday mornings',
+    language: 'English',
+    accessibility: 'None',
+    course_track: 'Frontend Developer'
+  });
   const [myRequests, setMyRequests] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
+  function buildReferenceId() {
+    return `IF-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+  }
+
+  function buildTimeline(status) {
+    const now = new Date().toISOString();
+    const steps = [
+      { label: 'Request submitted', when: now },
+      ...(status === 'approved' ? [{ label: 'Admin approved request', when: now }] : status === 'rejected' ? [{ label: 'Admin rejected request', when: now }] : [])
+    ];
+    return steps;
+  }
+
   async function load() {
-    try { setMyRequests(await api('/requests/mine')); } catch {}
+    try {
+      const serverRequests = await api('/requests/mine');
+      const merged = serverRequests.map((request) => {
+        const meta = (() => { try { return JSON.parse(localStorage.getItem(`if_request_meta_${request.id}`)); } catch { return null; } })();
+        return meta ? { ...request, ...meta } : request;
+      });
+      setMyRequests(merged);
+    } catch {}
   }
 
   useEffect(() => { load(); }, []);
 
   async function submit(e) {
     e.preventDefault();
+    if (!form.job_title.trim()) {
+      setMessage('Please enter the job position or course you want to apply for.');
+      return;
+    }
     setSubmitting(true);
     try {
-      await api('/requests', { method: 'POST', body: JSON.stringify(form) });
-      setMessage('Request sent to admin!');
-      setForm({ job_title: '', message: '' });
-      load();
+      const created = await api('/requests', { method: 'POST', body: JSON.stringify(form) });
+      const referenceId = buildReferenceId();
+      const timeline = buildTimeline('pending');
+      const requestMeta = {
+        reference: referenceId,
+        interview_type: form.interview_type,
+        preferred_slots: form.preferred_slots,
+        language: form.language,
+        accessibility: form.accessibility,
+        course_track: form.course_track,
+        timeline
+      };
+      localStorage.setItem(`if_request_meta_${created.id}`, JSON.stringify(requestMeta));
+      setMessage(`Request sent to admin with reference ${referenceId}.`);
+      setForm({ job_title: '', message: '', interview_type: 'Technical', preferred_slots: 'Weekday mornings', language: 'English', accessibility: 'None', course_track: 'Frontend Developer' });
+      await load();
     } catch (err) { setMessage(err.message); }
     setSubmitting(false);
   }
@@ -2394,8 +2663,33 @@ function RequestInterviewerPanel({ profile, setMessage }) {
         </div>
         <form className="stack" onSubmit={submit} style={{marginTop:16}}>
           <label>
-            Job Position
+            Job Position / Course
             <input placeholder="e.g. Frontend Developer" value={form.job_title} onChange={e => setForm({...form,job_title:e.target.value})} required />
+          </label>
+          <label>
+            Preferred course / track
+            <input placeholder="Selected track or specialization" value={form.course_track} onChange={e => setForm({...form,course_track:e.target.value})} />
+          </label>
+          <label>
+            Interview type
+            <select value={form.interview_type} onChange={e => setForm({...form, interview_type: e.target.value})}>
+              <option>Technical</option>
+              <option>HR</option>
+              <option>Panel</option>
+              <option>Skill Assessment</option>
+            </select>
+          </label>
+          <label>
+            Preferred slots
+            <input placeholder="Weekday mornings / any time" value={form.preferred_slots} onChange={e => setForm({...form, preferred_slots: e.target.value})} />
+          </label>
+          <label>
+            Language
+            <input placeholder="English / Hindi / Kannada" value={form.language} onChange={e => setForm({...form, language: e.target.value})} />
+          </label>
+          <label>
+            Accessibility needs
+            <input placeholder="None / Closed captions / Screen reader" value={form.accessibility} onChange={e => setForm({...form, accessibility: e.target.value})} />
           </label>
           <label>
             Message to Admin (optional)
@@ -2420,16 +2714,36 @@ function RequestInterviewerPanel({ profile, setMessage }) {
               <div className="req-card" key={r.id}>
                 <div className="req-card-top">
                   <div className="req-avatar" style={{background:'linear-gradient(135deg,#6366f1,#818cf8)'}}>
-                    {r.job_title[0].toUpperCase()}
+                    {(r.job_title || 'R')[0].toUpperCase()}
                   </div>
                   <div className="req-info">
                     <strong>{r.job_title}</strong>
+                    <span>{r.reference || 'Reference pending'}</span>
                     <span>{new Date(r.created_at).toLocaleDateString()}</span>
                     {r.interviewer && <span>Interviewer: {r.interviewer.full_name}</span>}
                   </div>
                   <span className={`req-pill ${r.status}`}>{r.status}</span>
                 </div>
                 {r.message && <p className="req-msg">"{r.message}"</p>}
+                <div style={{marginTop:10, fontSize:'0.8rem', color:'#697386', display:'grid', gap:4}}>
+                  {r.interview_type && <span>Type: {r.interview_type}</span>}
+                  {r.course_track && <span>Track: {r.course_track}</span>}
+                  {r.preferred_slots && <span>Preferred slots: {r.preferred_slots}</span>}
+                  {r.language && <span>Language: {r.language}</span>}
+                  {r.accessibility && <span>Accessibility: {r.accessibility}</span>}
+                </div>
+                {Array.isArray(r.timeline) && r.timeline.length > 0 && (
+                  <div style={{marginTop:12, padding:'10px 12px', borderRadius:8, background:'#f6f7f9'}}>
+                    <strong style={{fontSize:'0.8rem'}}>Audit timeline</strong>
+                    <div style={{display:'grid', gap:6, marginTop:6}}>
+                      {r.timeline.map((step, idx) => (
+                        <div key={`${step.label}-${idx}`} style={{fontSize:'0.78rem', color:'#697386'}}>
+                          • {step.label} · {new Date(step.when).toLocaleString()}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
