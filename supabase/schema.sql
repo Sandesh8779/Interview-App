@@ -123,3 +123,26 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- Custom table: candidate_results — stores arbitrary result content per candidate/interview
+create table if not exists public.candidate_results (
+  id uuid primary key default uuid_generate_v4(),
+  candidate_id uuid not null references public.profiles(id) on delete cascade,
+  interview_id uuid references public.interviews(id) on delete set null,
+  content jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists candidate_results_candidate_id_idx on public.candidate_results(candidate_id);
+create index if not exists candidate_results_interview_id_idx on public.candidate_results(interview_id);
+
+alter table public.candidate_results enable row level security;
+
+create policy "Service role manages candidate_results"
+  on public.candidate_results for all
+  using (auth.role() = 'service_role')
+  with check (auth.role() = 'service_role');
+
+create policy "Candidates can read their results"
+  on public.candidate_results for select
+  using (auth.uid() = candidate_id);
