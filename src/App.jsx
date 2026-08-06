@@ -41,7 +41,7 @@ const emptyInterview = {
   duration_minutes: 45
 };
 
-const ADMIN_EMAIL = 'amitdyavanal342@gmail.com';
+const ADMIN_EMAIL = 'amuliyagowda105@gmail.com';
 
 const jobPositions = [
   { title: 'Frontend Developer', department: 'Engineering', applicants: 18, status: 'Open' },
