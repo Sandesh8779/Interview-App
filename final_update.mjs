@@ -180,7 +180,7 @@ newFunc = `function NotificationList({ interviews = [] }) {
     { icon: "success", title: "Application Submitted", desc: "Your application for Frontend Developer has been received.", time: "2 days ago", unread: true },
     { icon: "info", title: "MCQ Test Available", desc: "You can now take the MCQ test from your dashboard.", time: "3 days ago", unread: true },
     { icon: "warning", title: "Interview Scheduled", desc: interviews.length > 0 ? "Interview scheduled for " + new Date(interviews[0].scheduled_at).toLocaleDateString() : "Check your schedule for upcoming interviews.", time: "1 week ago", unread: false },
-    { icon: "success", title: "Resume Approved", desc: "Your resume has been reviewed and approved.", time: "1 week ago", unread: false },
+    { icon: "success", title: "Resume Approved", desc: "Your  has been reviewed and approved.", time: "1 week ago", unread: false },
     { icon: "info", title: "Profile Updated", desc: "Your profile information has been saved successfully.", time: "2 weeks ago", unread: false },
   ];
 
