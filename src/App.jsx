@@ -337,7 +337,7 @@ function HomePage({ setMode, onAdminBypass }) {
       setAdminEmailInput('');
       setAdminError('');
     } else {
-      setAdminError('This email is not authorized for admin bypass. Use: ' + ADMIN_EMAIL);
+      setAdminError('This email is not authorized for admin bypass.');
     }
   }
 
