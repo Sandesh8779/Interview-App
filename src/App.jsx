@@ -120,7 +120,22 @@ export default function App() {
         return;
       }
 
-      const me = await api('/profiles/me');
+      const me = await api('/profiles/me').catch(async (error) => {
+        const fallbackProfile = {
+          id: currentSession.user.id,
+          full_name: currentSession.user.user_metadata?.full_name || currentSession.user.email?.split('@')[0] || 'User',
+          email: currentSession.user.email,
+          role: currentSession.user.user_metadata?.role || 'candidate'
+        };
+
+        if (error.message?.includes('Profile not found') || error.message?.includes('Forbidden')) {
+          setMessage('Your account profile is being initialized. Please wait a moment and refresh.');
+          return fallbackProfile;
+        }
+
+        throw error;
+      });
+
       setProfile(me);
 
       const list = await api('/interviews');
@@ -198,12 +213,18 @@ export default function App() {
       setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
       setSession(nextSession);
       if (!nextSession && !adminBypass) {
         setProfile(null);
         setInterviews([]);
         setProfiles([]);
+      } else if (nextSession) {
+        try {
+          await loadData();
+        } catch (error) {
+          setMessage(error.message || 'Unable to load your dashboard.');
+        }
       }
     });
 
